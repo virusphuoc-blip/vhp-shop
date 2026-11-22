@@ -33,8 +33,9 @@ export default function Checkout() {
   const [payment, setPayment] = useState<PaymentMethod>('cod')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [placed, setPlaced] = useState(false)
 
-  if (!cart.length) return <Navigate to={link('gio-hang')} replace />
+  if (!cart.length && !placed) return <Navigate to={link('gio-hang')} replace />
 
   const modeDef = modes.find((m) => m.id === mode) || modes[0]
   const subtotal = cartTotal
@@ -92,9 +93,10 @@ export default function Checkout() {
         total,
       })
       const zaloText = buildZaloOrderText({ storeName: store.name, orderId, items, customer, modeLabel: modeDef.label, booking: bookingText, total })
-      clearCart()
+      setPlaced(true)
       const state: OrderDoneState = { orderId, payment, total, zaloText }
       nav(link(`don-hang/${orderId}`), { replace: true, state })
+      clearCart()
     } catch {
       setErr('Không đặt được đơn, vui lòng thử lại hoặc liên hệ cửa hàng.')
     } finally {
