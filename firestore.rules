@@ -1,0 +1,229 @@
+rules_version = '2';
+
+// VHP Shop – Firestore security rules.
+// Mỗi chủ shop chỉ đọc/sửa cửa hàng của mình (ownerUid == request.auth.uid).
+// Khách mua hàng (không cần đăng nhập) chỉ được đọc cửa hàng đang hoạt động,
+// tạo đơn hàng và đánh giá. Chủ nền tảng (Google virusphuoc@gmail.com) xem tất cả.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isPlatformAdmin() {
+      return signedIn()
+        && request.auth.token.email == 'virusphuoc@gmail.com'
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    function storePath(storeId) {
+      return /databases/$(database)/documents/stores/$(storeId);
+    }
+
+    function isOwner(storeId) {
+      return signedIn() && get(storePath(storeId)).data.ownerUid == request.auth.uid;
+    }
+
+    function storeActive(storeId) {
+      return get(storePath(storeId)).data.active == true;
+    }
+
+    function canReadStoreContent(storeId) {
+      return storeActive(storeId) || isOwner(storeId) || isPlatformAdmin();
+    }
+
+    function str(v, min, max) {
+      return v is string && v.size() >= min && v.size() <= max;
+    }
+
+    function num(v, min, max) {
+      return (v is int || v is float) && v >= min && v <= max;
+    }
+
+    // ---------- Cấu hình nền tảng (mẫu bật/tắt) ----------
+    match /platform/{docId} {
+      allow read: if true;
+      allow write: if isPlatformAdmin();
+    }
+
+    // ---------- Tên miền phụ (đảm bảo không trùng) ----------
+    match /slugs/{slug} {
+      allow get: if true;
+      allow list: if isPlatformAdmin();
+      // Chỉ tạo được khi chưa tồn tại (ghi đè = update, bị chặn) và phải tạo cùng cửa hàng của chính mình.
+      allow create: if signedIn()
+        && slug.matches('^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$')
+        && request.resource.data.keys().hasOnly(['storeId', 'ownerUid'])
+        && request.resource.data.ownerUid == request.auth.uid
+        && getAfter(storePath(request.resource.data.storeId)).data.ownerUid == request.auth.uid
+        && getAfter(storePath(request.resource.data.storeId)).data.slug == slug;
+      allow update: if false;
+      allow delete: if isPlatformAdmin();
+    }
+
+    // ---------- Tên miền riêng ----------
+    match /domains/{domain} {
+      allow get: if true;
+      allow list: if isPlatformAdmin();
+      allow create: if signedIn()
+        && domain.matches('^[a-z0-9.-]{4,253}$')
+        && request.resource.data.keys().hasOnly(['storeId', 'ownerUid'])
+        && request.resource.data.ownerUid == request.auth.uid
+        && isOwner(request.resource.data.storeId);
+      allow update: if false;
+      allow delete: if (signedIn() && resource.data.ownerUid == request.auth.uid) || isPlatformAdmin();
+    }
+
+    // ---------- Cửa hàng ----------
+    function storeKeys() {
+      return ['ownerUid', 'ownerEmail', 'name', 'slug', 'template', 'phone', 'zalo', 'address', 'description',
+        'openHours', 'shippingFee', 'freeShipFrom', 'theme', 'bank', 'customDomain', 'domainStatus', 'active',
+        'createdAt', 'updatedAt'];
+    }
+
+    function validStoreFields(d) {
+      return d.keys().hasOnly(storeKeys())
+        && str(d.name, 1, 80)
+        && d.template in ['xe-may', 'do-choi', 'quan-ao', 'cafe', 'tap-hoa', 'do-an']
+        && str(d.phone, 0, 20)
+        && str(d.zalo, 0, 20)
+        && str(d.address, 0, 300)
+        && str(d.description, 0, 1000)
+        && str(d.openHours, 0, 100)
+        && num(d.shippingFee, 0, 100000000)
+        && num(d.freeShipFrom, 0, 1000000000)
+        && d.theme is map
+        && d.bank is map
+        && str(d.customDomain, 0, 253)
+        && d.domainStatus in ['none', 'pending', 'done'];
+    }
+
+    match /stores/{storeId} {
+      allow get: if resource.data.active == true
+        || (signedIn() && resource.data.ownerUid == request.auth.uid)
+        || isPlatformAdmin();
+      allow list: if (signedIn() && resource.data.ownerUid == request.auth.uid) || isPlatformAdmin();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(storeKeys())
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerEmail == request.auth.token.email
+        && request.resource.data.active == true
+        && request.resource.data.customDomain == ''
+        && request.resource.data.createdAt == request.time
+        && validStoreFields(request.resource.data)
+        && getAfter(/databases/$(database)/documents/slugs/$(request.resource.data.slug)).data.storeId == storeId;
+
+      // Chủ shop sửa thông tin; không được đổi chủ, tên miền phụ, trạng thái bật/tắt (do nền tảng quản lý).
+      allow update: if (signedIn() && resource.data.ownerUid == request.auth.uid
+          && !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['ownerUid', 'ownerEmail', 'slug', 'active', 'createdAt'])
+          && validStoreFields(request.resource.data))
+        || (isPlatformAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'updatedAt']));
+
+      allow delete: if isPlatformAdmin();
+
+      // ---------- Sản phẩm ----------
+      function validProduct(d) {
+        return d.keys().hasOnly(['name', 'price', 'oldPrice', 'stock', 'description', 'category', 'images', 'thumb',
+            'uploadCount', 'specs', 'sizes', 'active', 'createdAt', 'updatedAt'])
+          && str(d.name, 1, 150)
+          && num(d.price, 0, 10000000000)
+          && num(d.oldPrice, 0, 10000000000)
+          && num(d.stock, 0, 1000000)
+          && str(d.description, 0, 5000)
+          && str(d.category, 0, 60)
+          && d.images is list && d.images.size() <= 8
+          && str(d.thumb, 0, 40000)
+          && num(d.uploadCount, 0, 4)
+          && d.specs is map
+          && d.sizes is list && d.sizes.size() <= 20
+          && d.active is bool;
+      }
+
+      match /products/{productId} {
+        allow read: if canReadStoreContent(storeId);
+        allow create, update: if isOwner(storeId) && validProduct(request.resource.data);
+        allow delete: if isOwner(storeId);
+      }
+
+      // Ảnh tải lên (base64) tách riêng để danh sách sản phẩm nhẹ.
+      match /productMedia/{productId} {
+        allow read: if canReadStoreContent(storeId);
+        allow create, update: if isOwner(storeId)
+          && request.resource.data.keys().hasOnly(['images'])
+          && request.resource.data.images is list
+          && request.resource.data.images.size() <= 4;
+        allow delete: if isOwner(storeId);
+      }
+
+      // ---------- Đơn hàng ----------
+      function validNewOrder(d) {
+        return d.keys().hasOnly(['items', 'customer', 'mode', 'booking', 'payment', 'subtotal', 'shipping', 'discount',
+            'couponCode', 'total', 'status', 'stockApplied', 'createdAt'])
+          && d.items is list && d.items.size() >= 1 && d.items.size() <= 100
+          && d.customer is map
+          && str(d.customer.name, 1, 100)
+          && str(d.customer.phone, 8, 20)
+          && str(d.customer.address, 0, 300)
+          && str(d.customer.note, 0, 1000)
+          && str(d.mode, 1, 30)
+          && str(d.booking, 0, 100)
+          && d.payment in ['cod', 'bank', 'zalo']
+          && num(d.subtotal, 0, 100000000000)
+          && num(d.shipping, 0, 100000000)
+          && num(d.discount, 0, 100000000000)
+          && str(d.couponCode, 0, 30)
+          && num(d.total, 0, 100000000000)
+          && d.status == 'new'
+          && d.stockApplied == false
+          && d.createdAt == request.time;
+      }
+
+      match /orders/{orderId} {
+        allow create: if storeActive(storeId) && orderId.matches('^[A-Z0-9]{6,12}$') && validNewOrder(request.resource.data);
+        allow read: if isOwner(storeId) || isPlatformAdmin();
+        allow update: if isOwner(storeId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stockApplied', 'updatedAt'])
+          && request.resource.data.status in ['new', 'shipping', 'done', 'cancelled'];
+        allow delete: if false;
+      }
+
+      // ---------- Mã giảm giá ----------
+      match /coupons/{code} {
+        allow get: if canReadStoreContent(storeId);
+        allow list: if isOwner(storeId);
+        allow create, update: if isOwner(storeId)
+          && code.matches('^[A-Z0-9]{3,20}$')
+          && request.resource.data.keys().hasOnly(['code', 'type', 'value', 'minOrder', 'expiresAt', 'active', 'updatedAt'])
+          && request.resource.data.code == code
+          && request.resource.data.type in ['percent', 'fixed']
+          && num(request.resource.data.value, 0, 1000000000)
+          && (request.resource.data.type == 'fixed' || request.resource.data.value <= 100)
+          && num(request.resource.data.minOrder, 0, 10000000000)
+          && str(request.resource.data.expiresAt, 0, 10)
+          && request.resource.data.active is bool;
+        allow delete: if isOwner(storeId);
+      }
+
+      // ---------- Đánh giá ----------
+      match /reviews/{reviewId} {
+        allow read: if canReadStoreContent(storeId);
+        allow create: if storeActive(storeId)
+          && request.resource.data.keys().hasOnly(['productId', 'name', 'rating', 'comment', 'createdAt'])
+          && str(request.resource.data.productId, 1, 64)
+          && exists(/databases/$(database)/documents/stores/$(storeId)/products/$(request.resource.data.productId))
+          && str(request.resource.data.name, 1, 60)
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+          && str(request.resource.data.comment, 0, 1000)
+          && request.resource.data.createdAt == request.time;
+        allow update: if false;
+        allow delete: if isOwner(storeId);
+      }
+    }
+  }
+}
