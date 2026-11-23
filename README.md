@@ -1,6 +1,6 @@
 # VHP Shop
 
-Dịch vụ tạo website bán hàng cho khách: mỗi khách tự đăng ký, chọn 1 trong 6 mẫu (Xe máy, Đồ chơi, Quần áo, Cafe, Tạp hoá, Đồ ăn) và có cửa hàng riêng tại `ten-cua-hang.vhphuoc.shop`.
+Dịch vụ tạo website bán hàng cho khách: mỗi khách tự đăng ký, chọn 1 trong 32 mẫu thuộc 8 ngành hàng (Xe máy, Đồ chơi, Quần áo, Cafe, Tạp hoá, Đồ ăn, Điện tử, Nội thất – mỗi ngành 4 mẫu) và có cửa hàng riêng tại `ten-cua-hang.vhphuoc.shop`.
 
 React + Vite + TypeScript + Tailwind, Firebase Auth + Firestore (gói Spark miễn phí, không dùng Cloud Storage).
 

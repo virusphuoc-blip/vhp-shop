@@ -4,7 +4,7 @@ import { firebaseConfigured } from '../lib/firebase'
 import { Spinner } from '../components/ui'
 import type { Product, Review, Store, TemplateId } from '../lib/types'
 import type { StoreLookup } from '../lib/db'
-import { isTemplateId } from '../templates'
+import { getTemplate, isTemplateId } from '../templates'
 import { sampleProducts } from '../templates/samples'
 import type { StoreApi } from './StoreContext'
 import { StoreMessage } from './StoreMessage'
@@ -78,7 +78,7 @@ function demoStore(t: TemplateId): Store {
     id: `demo-${t}`,
     ownerUid: '',
     ownerEmail: '',
-    name: `Cửa hàng mẫu – ${t === 'xe-may' ? 'Xe máy' : t === 'do-choi' ? 'Đồ chơi' : t === 'quan-ao' ? 'Thời trang' : t === 'cafe' ? 'Cafe' : t === 'tap-hoa' ? 'Tạp hoá' : 'Đồ ăn'}`,
+    name: `Cửa hàng mẫu – ${t === 'quan-ao' ? 'Thời trang' : getTemplate(t).name}`,
     slug: `mau-${t}`,
     template: t,
     phone: '0900000000',

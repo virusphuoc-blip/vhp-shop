@@ -68,7 +68,7 @@ export default function DomainTab() {
         Địa chỉ miễn phí của bạn: <a href={pathStoreUrl(store.slug)} target="_blank" rel="noreferrer" className="break-all font-semibold text-indigo-700" data-testid="free-address">{pathStoreLabel(store.slug)}</a> (luôn hoạt động)
       </div>
       <div className="card text-sm text-slate-600" data-testid="subdomain-contact">
-        Muốn dùng địa chỉ dạng ten-shop.{ROOT_DOMAIN}? Liên hệ quản trị viên qua Zalo để được cấp subdomain:{' '}
+        Muốn dùng địa chỉ dạng ten-shop.vhphuoc.io.vn? Liên hệ quản trị viên qua Zalo để được cấp subdomain:{' '}
         <a href={zaloLink(ADMIN_ZALO)} target="_blank" rel="noreferrer" className="font-semibold text-indigo-700">Zalo {ADMIN_ZALO}</a>
       </div>
       <form onSubmit={save} className="card space-y-3">

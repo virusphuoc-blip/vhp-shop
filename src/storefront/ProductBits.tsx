@@ -56,7 +56,7 @@ export function ProductCard({ p }: { p: Product }) {
   const { template, link, reviews } = useStore()
   const r = ratingFor(reviews, p.id)
   const href = link(`san-pham/${p.id}`)
-  const id = template.id
+  const id = template.category
 
   if (id === 'cafe') {
     return (
@@ -117,7 +117,7 @@ export function ProductCard({ p }: { p: Product }) {
       className={`group flex flex-col overflow-hidden rounded-s bg-ssurf transition ${id === 'do-choi' ? 'border-2 border-sborder shadow-[0_4px_0_var(--sborder)] hover:-translate-y-0.5' : id === 'xe-may' ? 'border border-sborder hover:border-sp' : 'hover:opacity-90'}`}
       data-testid="product-card"
     >
-      <div className={`relative overflow-hidden ${id === 'quan-ao' ? 'aspect-[3/4]' : id === 'xe-may' ? 'aspect-[4/3]' : 'aspect-square'}`}>
+      <div className={`relative overflow-hidden ${id === 'quan-ao' ? 'aspect-[3/4]' : id === 'xe-may' || id === 'noi-that' ? 'aspect-[4/3]' : 'aspect-square'}`}>
         <ProductImage p={p} className="h-full w-full transition group-hover:scale-105" />
         <StockBadge p={p} />
       </div>
@@ -141,13 +141,13 @@ export function ProductCard({ p }: { p: Product }) {
 export function ProductGrid({ products }: { products: Product[] }) {
   const { template } = useStore()
   const cls =
-    template.id === 'cafe'
+    template.category === 'cafe'
       ? 'grid gap-3 md:grid-cols-2'
-      : template.id === 'do-an'
+      : template.category === 'do-an'
         ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3'
-        : template.id === 'tap-hoa'
+        : template.category === 'tap-hoa'
           ? 'grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6'
-          : template.id === 'quan-ao'
+          : template.category === 'quan-ao'
             ? 'grid grid-cols-2 gap-x-3 gap-y-5 lg:grid-cols-3'
             : 'grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4'
   if (!products.length) return <p className="py-10 text-center text-smuted">Chưa có {template.productWord} nào phù hợp.</p>

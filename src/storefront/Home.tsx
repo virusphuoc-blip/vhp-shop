@@ -10,15 +10,21 @@ function Hero() {
   const title = store.theme.heroTitle || template.heroTitle
   const sub = store.theme.heroSubtitle || template.heroSubtitle
   const banner = store.theme.banner
-  const id = template.id
+  const id = template.category
+  const original = template.id === id
 
   if (id === 'xe-may') {
+    const lightVariant = !original && !template.dark
     return (
-      <section className="relative overflow-hidden bg-black">
+      <section className={`relative overflow-hidden ${lightVariant ? 'bg-[linear-gradient(120deg,var(--sp),var(--sa))]' : 'bg-black'}`}>
         {banner && <img src={banner} alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" />}
-        <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(0,0,0,.9)_40%,transparent),repeating-linear-gradient(135deg,transparent_0_22px,rgba(249,115,22,.08)_22px_24px)]" />
+        {lightVariant ? (
+          <div className="absolute inset-0 bg-[repeating-linear-gradient(135deg,transparent_0_22px,rgba(255,255,255,.08)_22px_24px)]" />
+        ) : (
+          <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(0,0,0,.9)_40%,transparent),repeating-linear-gradient(135deg,transparent_0_22px,rgba(249,115,22,.08)_22px_24px)]" />
+        )}
         <div className="relative mx-auto max-w-6xl px-4 py-14">
-          <p className="font-heading text-sm tracking-[0.3em] text-sp uppercase">{store.name}</p>
+          <p className={`font-heading text-sm tracking-[0.3em] uppercase ${lightVariant ? 'text-white/85' : 'text-sp'}`}>{store.name}</p>
           <h1 className="font-heading mt-2 max-w-xl text-4xl leading-none font-bold text-white uppercase sm:text-5xl">{title}</h1>
           <p className="mt-3 max-w-md text-zinc-300">{sub}</p>
           <div className="mt-6 flex gap-3">
@@ -59,7 +65,7 @@ function Hero() {
         {banner ? (
           <img src={banner} alt="" className="h-[60vh] max-h-[560px] w-full object-cover" />
         ) : (
-          <div className="h-[46vh] w-full bg-[linear-gradient(160deg,#f5f5f4,#e7e5e4)]" />
+          <div className={`h-[46vh] w-full ${original ? 'bg-[linear-gradient(160deg,#f5f5f4,#e7e5e4)]' : 'bg-[linear-gradient(160deg,var(--ssurf),var(--sp))]'}`} />
         )}
         <div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/50 to-transparent">
           <div className="mx-auto w-full max-w-6xl px-4 pb-10 text-white">
@@ -90,12 +96,61 @@ function Hero() {
 
   if (id === 'tap-hoa') return <QuickSearchHero title={title} sub={sub} />
 
+  if (id === 'dien-tu') {
+    return (
+      <section className="border-b border-sborder bg-ssurf">
+        <div className="mx-auto grid max-w-6xl items-center gap-6 px-4 py-10 md:grid-cols-2">
+          <div>
+            <p className="text-xs font-bold tracking-[0.25em] text-sp uppercase">{store.name}</p>
+            <h1 className="font-heading mt-2 text-3xl leading-tight font-bold sm:text-5xl">{title}</h1>
+            <p className="mt-3 text-smuted">{sub}</p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link to={link('san-pham')} className="s-btn px-6">Mua ngay</Link>
+              {store.phone && <a href={`tel:${store.phone}`} className="s-btn-outline">Tư vấn {store.phone}</a>}
+            </div>
+            <ul className="mt-5 flex flex-wrap gap-2 text-xs font-semibold">
+              {['✓ Chính hãng', '✓ Trả góp 0%', '✓ Bảo hành tận nơi', '✓ Đổi trả 7 ngày'].map((b) => (
+                <li key={b} className="rounded-s border border-sborder bg-sbg px-2.5 py-1">{b}</li>
+              ))}
+            </ul>
+          </div>
+          {banner ? (
+            <img src={banner} alt="" className="aspect-[4/3] w-full rounded-s object-cover" />
+          ) : (
+            <div className="flex aspect-[16/9] items-center justify-center gap-4 rounded-s bg-[linear-gradient(135deg,var(--sp),var(--sa))] text-6xl">
+              <span>📱</span><span>💻</span><span>🎧</span>
+            </div>
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  if (id === 'noi-that') {
+    return (
+      <section className="relative">
+        {banner ? (
+          <img src={banner} alt="" className="h-72 w-full object-cover sm:h-[28rem]" />
+        ) : (
+          <div className="flex h-64 w-full items-center justify-center bg-[linear-gradient(160deg,var(--sbg),var(--sp))] text-7xl sm:h-96">🛋️</div>
+        )}
+        <div className="relative mx-auto -mt-16 max-w-3xl px-4">
+          <div className="rounded-s border border-sborder bg-ssurf p-6 text-center shadow-lg">
+            <h1 className="font-heading text-3xl leading-tight font-bold sm:text-4xl">{title}</h1>
+            <p className="mx-auto mt-2 max-w-xl text-smuted">{sub}</p>
+            <Link to={link('san-pham')} className="s-btn mt-5 px-7">Khám phá bộ sưu tập</Link>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="relative">
       {banner ? (
         <img src={banner} alt="" className="h-72 w-full object-cover sm:h-96" />
       ) : (
-        <div className="h-56 w-full bg-[radial-gradient(circle_at_30%_30%,#fde68a,#f97316)]" />
+        <div className={`h-56 w-full ${original ? 'bg-[radial-gradient(circle_at_30%_30%,#fde68a,#f97316)]' : 'bg-[radial-gradient(circle_at_30%_30%,var(--sa),var(--sp))]'}`} />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
       <div className="absolute inset-x-0 bottom-0 mx-auto max-w-6xl px-4 pb-6 text-white">
@@ -135,7 +190,7 @@ function Categories() {
   const extra = [...new Set(products.map((p) => p.category))].filter((c) => c && !template.categories.includes(c))
   const all = [...cats, ...extra]
   if (!all.length) return null
-  const id = template.id
+  const id = template.category
   if (id === 'tap-hoa') {
     return (
       <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
@@ -175,7 +230,7 @@ function Categories() {
 
 function SectionTitle({ children }: { children: string }) {
   const { template } = useStore()
-  const id = template.id
+  const id = template.category
   return (
     <h2
       className={`font-heading mb-4 text-2xl font-bold ${id === 'xe-may' ? 'border-l-4 border-sp pl-3 uppercase' : id === 'quan-ao' ? 'text-center font-semibold tracking-wide' : id === 'cafe' ? 'text-center italic' : ''}`}
@@ -187,7 +242,7 @@ function SectionTitle({ children }: { children: string }) {
 
 export default function Home() {
   const { template, products, link } = useStore()
-  const grouped = template.id === 'cafe' || template.id === 'do-an'
+  const grouped = template.category === 'cafe' || template.category === 'do-an'
   const cats = [...new Set(products.map((p) => p.category))]
   return (
     <>
@@ -203,7 +258,7 @@ export default function Home() {
           ))
         ) : (
           <section>
-            <SectionTitle>{template.id === 'quan-ao' ? 'Hàng mới về' : template.id === 'xe-may' ? 'Xe nổi bật' : `${template.productWord[0].toUpperCase()}${template.productWord.slice(1)} nổi bật`}</SectionTitle>
+            <SectionTitle>{template.category === 'quan-ao' ? 'Hàng mới về' : template.category === 'xe-may' ? 'Xe nổi bật' : `${template.productWord[0].toUpperCase()}${template.productWord.slice(1)} nổi bật`}</SectionTitle>
             <ProductGrid products={products.slice(0, 12)} />
             {products.length > 12 && (
               <div className="mt-6 text-center">

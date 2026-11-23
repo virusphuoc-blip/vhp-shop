@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore'
 import type { User } from 'firebase/auth'
 import { getDb } from './firebase'
-import { getTemplate } from '../templates'
+import { getTemplate, resolveTemplateId, storedTemplateId } from '../templates'
 import { sampleProducts } from '../templates/samples'
 import type { Coupon, DomainStatus, Order, OrderStatus, Product, Review, Store, StoreTheme, TemplateId } from './types'
 
@@ -28,7 +28,7 @@ function ms(v: unknown): number | undefined {
 }
 
 function toStore(id: string, d: DocumentData): Store {
-  const t = getTemplate(d.template)
+  const t = getTemplate(resolveTemplateId(d.template, d.theme?.variant))
   return {
     id,
     ownerUid: d.ownerUid,
@@ -43,7 +43,7 @@ function toStore(id: string, d: DocumentData): Store {
     openHours: d.openHours || '',
     shippingFee: d.shippingFee || 0,
     freeShipFrom: d.freeShipFrom || 0,
-    theme: { ...defaultTheme(t.id), ...(d.theme || {}) },
+    theme: { ...defaultTheme(t.id), ...(d.theme || {}), variant: t.id },
     bank: { bin: '', accountNo: '', accountName: '', ...(d.bank || {}) },
     customDomain: d.customDomain || '',
     domainStatus: d.domainStatus || 'none',
@@ -54,7 +54,7 @@ function toStore(id: string, d: DocumentData): Store {
 
 export function defaultTheme(template: TemplateId): StoreTheme {
   const t = getTemplate(template)
-  return { primary: t.palette.primary, accent: t.palette.accent, logo: '', banner: '', heroTitle: t.heroTitle, heroSubtitle: t.heroSubtitle }
+  return { primary: t.palette.primary, accent: t.palette.accent, logo: '', banner: '', heroTitle: t.heroTitle, heroSubtitle: t.heroSubtitle, variant: t.id }
 }
 
 function toProduct(id: string, d: DocumentData): Product {
@@ -124,7 +124,7 @@ export async function createStore(user: User, input: NewStoreInput, withSamples:
     ownerEmail: user.email || '',
     name: input.name.trim(),
     slug: input.slug,
-    template: input.template,
+    template: storedTemplateId(input.template),
     phone: input.phone.trim(),
     zalo: input.zalo.trim(),
     address: input.address.trim(),

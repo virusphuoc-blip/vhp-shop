@@ -142,11 +142,11 @@ export default function ProductDetail() {
       <div className="grid gap-6 md:grid-cols-2">
         <Gallery images={images} alt={p.name} icon={template.categoryIcons[p.category] || template.icon} />
         <div>
-          <h1 className={`font-heading text-2xl leading-tight font-bold sm:text-3xl ${template.id === 'xe-may' ? 'uppercase' : ''}`}>{p.name}</h1>
+          <h1 className={`font-heading text-2xl leading-tight font-bold sm:text-3xl ${template.category === 'xe-may' ? 'uppercase' : ''}`}>{p.name}</h1>
           <div className="mt-2">
             <Price p={p} big />
           </div>
-          {template.id === 'xe-may' && specs.length > 0 && (
+          {(template.category === 'xe-may' || template.category === 'dien-tu') && specs.length > 0 && (
             <div className="mt-4 grid grid-cols-3 gap-2">
               {specs.filter((f) => f.chip).map((f) => (
                 <div key={f.key} className="rounded-s border border-sp/40 bg-sp/10 p-2 text-center">

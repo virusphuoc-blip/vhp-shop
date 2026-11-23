@@ -63,7 +63,7 @@ export default function ProductList() {
           value={q}
           onChange={(e) => set('q', e.target.value)}
           aria-label="Tìm kiếm"
-          autoFocus={template.id === 'tap-hoa'}
+          autoFocus={template.category === 'tap-hoa'}
         />
         <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4" role="group" aria-label="Danh mục">
           {['', ...cats].map((c) => (

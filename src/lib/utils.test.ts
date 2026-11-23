@@ -83,3 +83,32 @@ describe('zalo', () => {
     expect(t).toContain('Áo (size M) x2')
   })
 })
+
+describe('templates', async () => {
+  const { TEMPLATES, CATEGORIES, resolveTemplateId, storedTemplateId } = await import('../templates')
+  const { sampleProducts } = await import('../templates/samples')
+  it('has 8 categories × 4 templates with 6 samples each', () => {
+    expect(CATEGORIES).toHaveLength(8)
+    expect(TEMPLATES).toHaveLength(32)
+    for (const c of CATEGORIES) expect(TEMPLATES.filter((t) => t.category === c.id)).toHaveLength(4)
+    for (const t of TEMPLATES) {
+      const samples = sampleProducts(t.id)
+      expect(samples).toHaveLength(6)
+      const keys = new Set(t.specFields.map((f) => f.key))
+      for (const p of samples) {
+        expect(t.categories).toContain(p.category)
+        for (const k of Object.keys(p.specs)) expect(keys.has(k)).toBe(true)
+      }
+    }
+  })
+  it('stores only rule-allowed template ids and resolves the variant back', () => {
+    const allowed = ['xe-may', 'do-choi', 'quan-ao', 'cafe', 'tap-hoa', 'do-an']
+    for (const t of TEMPLATES) {
+      const stored = storedTemplateId(t.id)
+      expect(allowed).toContain(stored)
+      expect(resolveTemplateId(stored, t.id)).toBe(t.id)
+    }
+    expect(resolveTemplateId('cafe', undefined)).toBe('cafe')
+    expect(resolveTemplateId('cafe', 'xe-may-the-thao')).toBe('cafe')
+  })
+})

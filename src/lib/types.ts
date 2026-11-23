@@ -1,4 +1,19 @@
-export type TemplateId = 'xe-may' | 'do-choi' | 'quan-ao' | 'cafe' | 'tap-hoa' | 'do-an'
+/** Giá trị firestore.rules cho phép ở trường `template` của cửa hàng. */
+export type StoredTemplateId = 'xe-may' | 'do-choi' | 'quan-ao' | 'cafe' | 'tap-hoa' | 'do-an'
+
+/** Ngành hàng (mỗi ngành có 4 mẫu). */
+export type CategoryId = StoredTemplateId | 'dien-tu' | 'noi-that'
+
+export type TemplateId =
+  | CategoryId
+  | 'xe-may-showroom' | 'xe-may-the-thao' | 'xe-may-co-dien'
+  | 'do-choi-pastel' | 'do-choi-vu-tru' | 'do-choi-go'
+  | 'quan-ao-street' | 'quan-ao-nu-tinh' | 'quan-ao-tre-trung'
+  | 'cafe-dem' | 'cafe-san-vuon' | 'cafe-toi-gian'
+  | 'tap-hoa-sieu-thi' | 'tap-hoa-sach' | 'tap-hoa-24h'
+  | 'do-an-quan-nhau' | 'do-an-healthy' | 'do-an-com-nha'
+  | 'dien-tu-cong-nghe' | 'dien-tu-gia-dung' | 'dien-tu-cao-cap'
+  | 'noi-that-bac-au' | 'noi-that-go' | 'noi-that-sang-trong'
 
 export type OrderStatus = 'new' | 'shipping' | 'done' | 'cancelled'
 export type PaymentMethod = 'cod' | 'bank' | 'zalo'
@@ -11,6 +26,8 @@ export interface StoreTheme {
   banner: string
   heroTitle: string
   heroSubtitle: string
+  /** Mẫu cụ thể trong ngành hàng (lưu trong theme vì `template` chỉ nhận id ngành hàng). */
+  variant?: TemplateId
 }
 
 export interface BankInfo {

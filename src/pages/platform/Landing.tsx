@@ -4,7 +4,7 @@ import { PlatformShell } from '../../components/PlatformShell'
 import { useAuth } from '../../auth/AuthContext'
 import { pathStoreLabel } from '../../lib/urls'
 import { applySeo } from '../../lib/seo'
-import { TEMPLATES } from '../../templates'
+import { CATEGORIES, TEMPLATES } from '../../templates'
 
 const FEATURES = [
   { icon: '🌐', title: 'Tên miền riêng', text: `Cửa hàng chạy ngay ở ${pathStoreLabel('ten-cua-hang')}, gắn thêm tên miền của bạn khi cần.` },
@@ -21,7 +21,7 @@ export default function Landing() {
     applySeo({
       title: 'VHP Shop – Tạo website bán hàng riêng miễn phí trong 2 phút',
       description:
-        'VHP Shop giúp bạn tự tạo website bán hàng riêng với tên miền phụ, 6 mẫu giao diện cho xe máy, đồ chơi, quần áo, cafe, tạp hoá, đồ ăn. Đặt hàng COD, chuyển khoản VietQR, Zalo.',
+        'VHP Shop giúp bạn tự tạo website bán hàng riêng với 32 mẫu giao diện cho 8 ngành hàng: xe máy, đồ chơi, quần áo, cafe, tạp hoá, đồ ăn, điện tử, nội thất. Đặt hàng COD, chuyển khoản VietQR, Zalo.',
     })
   }, [])
   const cta = user ? '/tao-cua-hang' : '/dang-ky'
@@ -42,7 +42,7 @@ export default function Landing() {
               Tạo cửa hàng miễn phí
             </Link>
             <a href="#mau" className="btn border border-white/40 px-5 py-3 text-base text-white hover:bg-white/10">
-              Xem 6 mẫu giao diện
+              Xem 32 mẫu giao diện
             </a>
           </div>
         </div>
@@ -53,7 +53,7 @@ export default function Landing() {
         <ol className="mt-6 grid gap-4 sm:grid-cols-3">
           {[
             ['1', 'Đăng ký', 'Bằng email hoặc tài khoản Google.'],
-            ['2', 'Chọn mẫu & đặt tên', 'Hệ thống tự tạo tên miền phụ, kiểm tra trùng.'],
+            ['2', 'Chọn mẫu & đặt tên', `Hệ thống tạo địa chỉ miễn phí dạng ${pathStoreLabel('ten-cua-hang')} và kiểm tra trùng tên.`],
             ['3', 'Thêm sản phẩm & bán', 'Chia sẻ link cửa hàng, nhận đơn ngay.'],
           ].map(([n, t, d]) => (
             <li key={n} className="card">
@@ -67,11 +67,14 @@ export default function Landing() {
 
       <section id="mau" className="scroll-mt-16 bg-white px-4 py-12">
         <div className="mx-auto max-w-5xl">
-          <h2 className="text-center text-2xl font-extrabold">6 mẫu giao diện theo ngành hàng</h2>
-          <p className="mt-2 text-center text-slate-600">Mỗi mẫu có màu sắc, bố cục và chức năng riêng cho mặt hàng.</p>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {TEMPLATES.map((t) => (
-              <article key={t.id} className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+          <h2 className="text-center text-2xl font-extrabold">32 mẫu giao diện cho 8 ngành hàng</h2>
+          <p className="mt-2 text-center text-slate-600">Mỗi ngành hàng có 4 mẫu với màu sắc, phông chữ và phong cách riêng.</p>
+          {CATEGORIES.map((c) => (
+          <div key={c.id} className="mt-8" data-testid="landing-category">
+          <h3 className="text-lg font-bold">{c.icon} {c.name}</h3>
+          <div className="no-scrollbar -mx-4 mt-3 flex snap-x gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-4 lg:overflow-visible lg:px-0">
+            {TEMPLATES.filter((t) => t.category === c.id).map((t) => (
+              <article key={t.id} className="w-64 shrink-0 snap-start overflow-hidden rounded-2xl border border-slate-200 shadow-sm lg:w-auto">
                 <div
                   className="flex h-32 items-center justify-between px-5"
                   style={{ background: `linear-gradient(135deg, ${t.palette.bg} 0%, ${t.palette.surface} 55%, ${t.palette.primary} 140%)` }}
@@ -105,6 +108,8 @@ export default function Landing() {
               </article>
             ))}
           </div>
+          </div>
+          ))}
         </div>
       </section>
 

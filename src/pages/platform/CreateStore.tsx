@@ -8,7 +8,7 @@ import { pathStoreLabel } from '../../lib/urls'
 import { applySeo } from '../../lib/seo'
 import { slugify, validateSlug } from '../../lib/slug'
 import type { TemplateId } from '../../lib/types'
-import { isTemplateId, TEMPLATES } from '../../templates'
+import { CATEGORIES, isTemplateId, TEMPLATES } from '../../templates'
 
 type SlugState = 'idle' | 'checking' | 'free' | 'taken' | 'invalid'
 
@@ -85,8 +85,15 @@ export default function CreateStore() {
 
         {step === 1 && (
           <>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {TEMPLATES.filter((t) => !disabled.includes(t.id)).map((t) => (
+            <p className="mt-1 text-sm text-slate-600">{TEMPLATES.length} mẫu · {CATEGORIES.length} ngành hàng – mỗi ngành 4 mẫu.</p>
+            {CATEGORIES.map((c) => {
+              const list = TEMPLATES.filter((t) => t.category === c.id && !disabled.includes(t.id))
+              if (!list.length) return null
+              return (
+            <section key={c.id} className="mt-5" data-testid="template-group">
+            <h2 className="text-sm font-bold text-slate-700">{c.icon} {c.name} <span className="font-normal text-slate-500">· {list.length} mẫu</span></h2>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              {list.map((t) => (
                 <button
                   key={t.id}
                   type="button"
@@ -107,6 +114,9 @@ export default function CreateStore() {
                 </button>
               ))}
             </div>
+            </section>
+              )
+            })}
             <div className="mt-6 flex justify-end">
               <button type="button" className="btn-primary px-6 py-2.5" onClick={() => setStep(2)}>
                 Tiếp tục
