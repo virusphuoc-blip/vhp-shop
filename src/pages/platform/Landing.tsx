@@ -5,6 +5,8 @@ import { useAuth } from '../../auth/AuthContext'
 import { pathStoreLabel } from '../../lib/urls'
 import { applySeo } from '../../lib/seo'
 import { CATEGORIES, TEMPLATES } from '../../templates'
+import { PlanComparison } from '../../components/PlanBits'
+import { usePlatformConfig } from '../../lib/usePlatformConfig'
 
 const FEATURES = [
   { icon: '🌐', title: 'Tên miền riêng', text: `Cửa hàng chạy ngay ở ${pathStoreLabel('ten-cua-hang')}, gắn thêm tên miền của bạn khi cần.` },
@@ -17,6 +19,7 @@ const FEATURES = [
 
 export default function Landing() {
   const { user } = useAuth()
+  const { plans } = usePlatformConfig()
   useEffect(() => {
     applySeo({
       title: 'VHP Shop – Tạo website bán hàng riêng miễn phí trong 2 phút',
@@ -37,6 +40,9 @@ export default function Landing() {
             Chọn mẫu, đặt tên cửa hàng, nhận ngay địa chỉ <b>{pathStoreLabel('ten-cua-hang')}</b>. Khách đặt hàng COD, chuyển khoản VietQR hoặc qua
             Zalo.
           </p>
+          <div className="mt-6 max-w-xl">
+            <PlanComparison plans={plans} />
+          </div>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link to={cta} className="btn bg-white px-5 py-3 text-base text-indigo-700 hover:bg-indigo-50">
               Tạo cửa hàng miễn phí

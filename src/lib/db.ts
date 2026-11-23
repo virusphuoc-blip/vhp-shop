@@ -21,7 +21,7 @@ import type { User } from 'firebase/auth'
 import { getDb } from './firebase'
 import { getTemplate, resolveTemplateId, storedTemplateId } from '../templates'
 import { sampleProducts } from '../templates/samples'
-import type { Coupon, DomainStatus, Order, OrderStatus, Product, Review, Store, StoreTheme, TemplateId } from './types'
+import type { Coupon, DomainStatus, Order, OrderStatus, Plan, PlansConfig, PlatformSettings, Product, Review, Store, StoreTheme, TemplateId, UserAccount } from './types'
 
 function ms(v: unknown): number | undefined {
   return v instanceof Timestamp ? v.toMillis() : undefined
@@ -48,6 +48,7 @@ function toStore(id: string, d: DocumentData): Store {
     customDomain: d.customDomain || '',
     domainStatus: d.domainStatus || 'none',
     active: d.active === true,
+    productCount: typeof d.productCount === 'number' ? d.productCount : undefined,
     createdAt: ms(d.createdAt),
   }
 }
@@ -115,7 +116,8 @@ export interface NewStoreInput {
   address: string
 }
 
-export async function createStore(user: User, input: NewStoreInput, withSamples: boolean): Promise<string> {
+/** maxSamples: số sản phẩm mẫu tối đa theo giới hạn gói (undefined = không giới hạn). */
+export async function createStore(user: User, input: NewStoreInput, withSamples: boolean, maxSamples?: number): Promise<string> {
   const db = getDb()
   const storeRef = doc(collection(db, 'stores'))
   const batch = writeBatch(db)
@@ -137,17 +139,23 @@ export async function createStore(user: User, input: NewStoreInput, withSamples:
     customDomain: '',
     domainStatus: 'none',
     active: true,
+    productCount: 0,
+    lastProductId: '',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
   batch.set(doc(db, 'slugs', input.slug), { storeId: storeRef.id, ownerUid: user.uid })
   await batch.commit()
   if (withSamples) {
-    const b2 = writeBatch(db)
-    for (const p of sampleProducts(input.template)) {
-      b2.set(doc(collection(db, 'stores', storeRef.id, 'products')), { ...p, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+    const samples = sampleProducts(input.template).slice(0, maxSamples === undefined || maxSamples === 0 ? undefined : maxSamples)
+    let count = 0
+    for (const p of samples) {
+      const ref = doc(collection(db, 'stores', storeRef.id, 'products'))
+      const b2 = writeBatch(db)
+      b2.set(ref, { ...p, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+      b2.update(storeRef, { productCount: ++count, lastProductId: ref.id })
+      await b2.commit()
     }
-    await b2.commit()
   }
   return storeRef.id
 }
@@ -225,13 +233,17 @@ export async function getProductMedia(storeId: string, productId: string): Promi
 
 export type ProductInput = Omit<Product, 'id' | 'createdAt' | 'uploadCount'>
 
-export async function saveProduct(storeId: string, productId: string | null, data: ProductInput, uploads: string[]): Promise<string> {
+/** currentCount: bộ đếm sản phẩm hiện tại của cửa hàng (tăng 1 khi thêm mới). */
+export async function saveProduct(storeId: string, productId: string | null, data: ProductInput, uploads: string[], currentCount = 0): Promise<string> {
   const db = getDb()
   const ref = productId ? doc(db, 'stores', storeId, 'products', productId) : doc(collection(db, 'stores', storeId, 'products'))
   const batch = writeBatch(db)
   const payload = { ...data, uploadCount: uploads.length, updatedAt: serverTimestamp() }
   if (productId) batch.update(ref, payload)
-  else batch.set(ref, { ...payload, createdAt: serverTimestamp() })
+  else {
+    batch.set(ref, { ...payload, createdAt: serverTimestamp() })
+    batch.update(doc(db, 'stores', storeId), { productCount: currentCount + 1, lastProductId: ref.id, updatedAt: serverTimestamp() })
+  }
   const mediaRef = doc(db, 'stores', storeId, 'productMedia', ref.id)
   if (uploads.length) batch.set(mediaRef, { images: uploads })
   else if (productId) batch.delete(mediaRef)
@@ -239,12 +251,32 @@ export async function saveProduct(storeId: string, productId: string | null, dat
   return ref.id
 }
 
-export async function deleteProduct(storeId: string, productId: string): Promise<void> {
+export async function deleteProduct(storeId: string, productId: string, currentCount = 0): Promise<void> {
   const db = getDb()
   const batch = writeBatch(db)
   batch.delete(doc(db, 'stores', storeId, 'products', productId))
   batch.delete(doc(db, 'stores', storeId, 'productMedia', productId))
+  if (currentCount > 0) batch.update(doc(db, 'stores', storeId), { productCount: currentCount - 1, lastProductId: productId, updatedAt: serverTimestamp() })
   await batch.commit()
+}
+
+/** Khởi tạo bộ đếm sản phẩm cho cửa hàng tạo trước v1.1.0. */
+export async function initProductCount(storeId: string, count: number): Promise<void> {
+  await updateDoc(doc(getDb(), 'stores', storeId), { productCount: count })
+}
+
+/** Đổi mẫu giao diện; giữ logo/banner, màu và tiêu đề chưa sửa thì theo mẫu mới. */
+export function themeForTemplate(store: Store, id: TemplateId): StoreTheme {
+  const oldDef = defaultTheme(store.template)
+  const next = defaultTheme(id)
+  const keep = <K extends keyof StoreTheme>(k: K) => (store.theme[k] && store.theme[k] !== oldDef[k] ? store.theme[k] : next[k])
+  return { ...next, logo: store.theme.logo, banner: store.theme.banner, primary: keep('primary'), accent: keep('accent'), heroTitle: keep('heroTitle'), heroSubtitle: keep('heroSubtitle') }
+}
+
+export async function changeStoreTemplate(store: Store, id: TemplateId): Promise<StoreTheme> {
+  const theme = themeForTemplate(store, id)
+  await updateDoc(doc(getDb(), 'stores', store.id), { template: storedTemplateId(id), theme, updatedAt: serverTimestamp() })
+  return theme
 }
 
 // ---------------- Orders ----------------
@@ -364,4 +396,57 @@ export async function countOrders(storeId: string, since?: Date): Promise<number
   const q = since ? query(col, where('createdAt', '>=', Timestamp.fromDate(since))) : col
   const snap = await getCountFromServer(q)
   return snap.data().count
+}
+
+// ---------------- Gói tài khoản ----------------
+
+function toAccount(uid: string, d: DocumentData): UserAccount {
+  return { uid, email: d.email || '', plan: d.plan === 'vip' ? 'vip' : 'free', vipExpiresAt: ms(d.vipExpiresAt), createdAt: ms(d.createdAt) }
+}
+
+/** Đọc hồ sơ gói của người dùng; tạo hồ sơ gói Thường nếu chưa có. */
+export async function ensureUserAccount(user: User): Promise<UserAccount> {
+  const ref = doc(getDb(), 'users', user.uid)
+  const snap = await getDoc(ref)
+  if (snap.exists()) return toAccount(user.uid, snap.data())
+  await setDoc(ref, { email: user.email || '', plan: 'free', vipExpiresAt: null, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+  const created = await getDoc(ref)
+  return toAccount(user.uid, created.data() || {})
+}
+
+export async function listUserAccounts(): Promise<UserAccount[]> {
+  const snap = await getDocs(collection(getDb(), 'users'))
+  return snap.docs.map((d) => toAccount(d.id, d.data()))
+}
+
+/** Chỉ admin: đặt gói cho tài khoản (tạo hồ sơ nếu tài khoản cũ chưa có). */
+export async function setUserPlan(acc: { uid: string; email: string; createdAt?: number }, plan: Plan, vipExpiresAt: Date | null): Promise<void> {
+  await setDoc(doc(getDb(), 'users', acc.uid), {
+    email: acc.email,
+    plan,
+    vipExpiresAt: plan === 'vip' && vipExpiresAt ? Timestamp.fromDate(vipExpiresAt) : null,
+    createdAt: acc.createdAt ? Timestamp.fromMillis(acc.createdAt) : serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function getPlansConfig(): Promise<PlansConfig | null> {
+  const snap = await getDoc(doc(getDb(), 'platformConfig', 'plans'))
+  if (!snap.exists()) return null
+  const d = snap.data()
+  return { free: { maxTemplates: d.free.maxTemplates, maxProducts: d.free.maxProducts }, vip: { maxTemplates: d.vip.maxTemplates, maxProducts: d.vip.maxProducts } }
+}
+
+export async function savePlansConfig(c: PlansConfig): Promise<void> {
+  await setDoc(doc(getDb(), 'platformConfig', 'plans'), { free: c.free, vip: c.vip, updatedAt: serverTimestamp() })
+}
+
+export async function getPlatformSettings(): Promise<PlatformSettings | null> {
+  const snap = await getDoc(doc(getDb(), 'platformConfig', 'settings'))
+  if (!snap.exists()) return null
+  return { freeMode: snap.data().freeMode !== false, freeClosedAt: ms(snap.data().freeClosedAt) }
+}
+
+export async function setFreeMode(on: boolean): Promise<void> {
+  await setDoc(doc(getDb(), 'platformConfig', 'settings'), { freeMode: on, freeClosedAt: on ? null : serverTimestamp(), updatedAt: serverTimestamp() })
 }

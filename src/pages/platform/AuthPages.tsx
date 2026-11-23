@@ -5,6 +5,8 @@ import { authErrorMessage, loginEmail, loginGoogle, registerEmail, resetPassword
 import { NotConfigured } from '../../components/NotConfigured'
 import { PlatformShell } from '../../components/PlatformShell'
 import { Alert } from '../../components/ui'
+import { FreeClosedNotice } from '../../components/PlanBits'
+import { usePlatformConfig } from '../../lib/usePlatformConfig'
 import { firebaseConfigured } from '../../lib/firebase'
 import { applySeo } from '../../lib/seo'
 
@@ -129,6 +131,7 @@ export function RegisterPage() {
   const [busy, setBusy] = useState(false)
   const [sp] = useSearchParams()
   useEffect(() => applySeo({ title: 'Đăng ký – VHP Shop', description: 'Đăng ký miễn phí và tạo website bán hàng riêng của bạn trong 2 phút.' }), [])
+  const { settings } = usePlatformConfig()
   if (!firebaseConfigured) return <NotConfigured />
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -145,6 +148,14 @@ export function RegisterPage() {
   }
   return (
     <AuthCard title="Tạo tài khoản">
+      {settings && !settings.freeMode && (
+        <div className="mb-4">
+          <Alert kind="warn">
+            <FreeClosedNotice />
+            <p className="mt-1 text-xs">Bạn vẫn có thể tạo tài khoản; cửa hàng chỉ tạo được sau khi quản trị kích hoạt VIP.</p>
+          </Alert>
+        </div>
+      )}
       <form onSubmit={submit} className="space-y-3">
         {err && <Alert>{err}</Alert>}
         <div>

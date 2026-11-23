@@ -141,10 +141,19 @@ describe('sản phẩm', () => {
   it('chủ shop thêm/xoá, người khác không', async () => {
     const alice = env.authenticatedContext('alice').firestore()
     const bob = env.authenticatedContext('bob').firestore()
-    await assertSucceeds(setDoc(doc(alice, 'stores/sA/products/p2'), { ...product, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }))
-    await assertFails(setDoc(doc(bob, 'stores/sA/products/p3'), { ...product }))
+    const b = writeBatch(alice)
+    b.set(doc(alice, 'stores/sA/products/p2'), { ...product, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+    b.update(doc(alice, 'stores/sA'), { productCount: 1, lastProductId: 'p2' })
+    await assertSucceeds(b.commit())
+    const b2 = writeBatch(bob)
+    b2.set(doc(bob, 'stores/sA/products/p3'), { ...product })
+    b2.update(doc(bob, 'stores/sA'), { productCount: 2, lastProductId: 'p3' })
+    await assertFails(b2.commit())
     await assertFails(deleteDoc(doc(bob, 'stores/sA/products/p1')))
-    await assertSucceeds(deleteDoc(doc(alice, 'stores/sA/products/p1')))
+    const b3 = writeBatch(alice)
+    b3.delete(doc(alice, 'stores/sA/products/p1'))
+    b3.update(doc(alice, 'stores/sA'), { productCount: 0, lastProductId: 'p1' })
+    await assertSucceeds(b3.commit())
   })
   it('khách đọc sản phẩm', async () => {
     await assertSucceeds(getDocs(collection(env.unauthenticatedContext().firestore(), 'stores/sA/products')))
@@ -210,5 +219,90 @@ describe('quản trị nền tảng', () => {
     const fake = env.authenticatedContext('fake', { ...ADMIN, firebase: { sign_in_provider: 'password' } }).firestore()
     await assertFails(getDocs(collection(fake, 'stores')))
     await assertFails(setDoc(doc(fake, 'platform/templates'), { disabled: [] }))
+  })
+})
+
+describe('gói Thường / VIP', () => {
+  const DAY = 86400000
+  async function seed(path: string, data: Record<string, unknown>) {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), path), data)
+    })
+  }
+  const plans = (freeMax: number, freeTpl = 1) => ({ free: { maxTemplates: freeTpl, maxProducts: freeMax }, vip: { maxTemplates: 32, maxProducts: 0 } })
+  const userDoc = (plan: 'free' | 'vip', vipExpiresAt: Date | null, createdAt = new Date()) => ({ email: 'x@test.vn', plan, vipExpiresAt, createdAt })
+  function addProduct(db: ReturnType<RulesTestEnvironment['authenticatedContext']>['firestore'] extends () => infer F ? F : never, pid: string, count: number) {
+    const b = writeBatch(db)
+    b.set(doc(db, `stores/sA/products/${pid}`), { ...product, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+    b.update(doc(db, 'stores/sA'), { productCount: count, lastProductId: pid, updatedAt: serverTimestamp() })
+    return b.commit()
+  }
+  const alice = () => env.authenticatedContext('alice', { email: 'alice@test.vn' }).firestore()
+
+  it('người dùng tự tạo hồ sơ gói Thường, không tự nâng VIP', async () => {
+    const db = alice()
+    await assertFails(setDoc(doc(db, 'users/alice'), { email: 'alice@test.vn', plan: 'vip', vipExpiresAt: null, createdAt: serverTimestamp() }))
+    await assertFails(setDoc(doc(db, 'users/bob'), { email: 'alice@test.vn', plan: 'free', vipExpiresAt: null, createdAt: serverTimestamp() }))
+    await assertSucceeds(setDoc(doc(db, 'users/alice'), { email: 'alice@test.vn', plan: 'free', vipExpiresAt: null, createdAt: serverTimestamp() }))
+    await assertFails(updateDoc(doc(db, 'users/alice'), { plan: 'vip', vipExpiresAt: new Date(Date.now() + DAY) }))
+    await assertFails(getDocs(collection(db, 'users')))
+  })
+
+  it('chỉ admin sửa cấu hình gói và tài khoản', async () => {
+    const admin = env.authenticatedContext('admin', ADMIN).firestore()
+    await assertSucceeds(setDoc(doc(admin, 'platformConfig/plans'), { ...plans(10), updatedAt: serverTimestamp() }))
+    await assertFails(setDoc(doc(admin, 'platformConfig/plans'), { free: { maxTemplates: 0, maxProducts: 10 }, vip: { maxTemplates: 32, maxProducts: 0 } }))
+    await assertSucceeds(setDoc(doc(admin, 'platformConfig/settings'), { freeMode: false, freeClosedAt: serverTimestamp() }))
+    await assertSucceeds(setDoc(doc(admin, 'users/alice'), userDoc('vip', new Date(Date.now() + 30 * DAY))))
+    await assertSucceeds(getDocs(collection(admin, 'users')))
+    await assertFails(setDoc(doc(alice(), 'platformConfig/plans'), plans(1000, 32)))
+    await assertFails(setDoc(doc(alice(), 'platformConfig/settings'), { freeMode: true, freeClosedAt: null }))
+  })
+
+  it('thêm/xoá sản phẩm phải đi kèm bộ đếm', async () => {
+    const db = alice()
+    await assertSucceeds(updateDoc(doc(db, 'stores/sA'), { productCount: 1 }))
+    await assertFails(setDoc(doc(db, 'stores/sA/products/p2'), { ...product, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }))
+    await assertSucceeds(addProduct(db, 'p2', 2))
+    await assertFails(updateDoc(doc(db, 'stores/sA'), { productCount: 0 }))
+    await assertFails(deleteDoc(doc(db, 'stores/sA/products/p2')))
+    const b = writeBatch(db)
+    b.delete(doc(db, 'stores/sA/products/p2'))
+    b.update(doc(db, 'stores/sA'), { productCount: 1, lastProductId: 'p2' })
+    await assertSucceeds(b.commit())
+  })
+
+  it('gói Thường bị chặn khi vượt giới hạn sản phẩm, VIP còn hạn thì không', async () => {
+    await seed('platformConfig/plans', plans(2))
+    const db = alice()
+    await assertSucceeds(updateDoc(doc(db, 'stores/sA'), { productCount: 1 }))
+    await assertSucceeds(addProduct(db, 'p2', 2))
+    await assertFails(addProduct(db, 'p3', 3))
+    await seed('users/alice', userDoc('vip', new Date(Date.now() - DAY)))
+    await assertFails(addProduct(db, 'p3', 3))
+    await seed('users/alice', userDoc('vip', new Date(Date.now() + DAY)))
+    await assertSucceeds(addProduct(db, 'p3', 3))
+  })
+
+  it('gói Thường không đổi được mẫu, VIP đổi được', async () => {
+    await seed('platformConfig/plans', plans(10))
+    const db = alice()
+    await assertSucceeds(updateDoc(doc(db, 'stores/sA'), { 'theme.variant': 'cafe' }))
+    await assertFails(updateDoc(doc(db, 'stores/sA'), { 'theme.variant': 'cafe-dem' }))
+    await assertFails(updateDoc(doc(db, 'stores/sA'), { template: 'xe-may', 'theme.variant': 'xe-may' }))
+    await assertSucceeds(updateDoc(doc(db, 'stores/sA'), { name: 'Tên mới' }))
+    await seed('users/alice', userDoc('vip', new Date(Date.now() + DAY)))
+    await assertSucceeds(updateDoc(doc(db, 'stores/sA'), { template: 'xe-may', 'theme.variant': 'xe-may-the-thao' }))
+  })
+
+  it('tắt chế độ miễn phí: tài khoản mới không tạo được cửa hàng, tài khoản cũ và VIP thì được', async () => {
+    await seed('platformConfig/settings', { freeMode: false, freeClosedAt: new Date() })
+    await assertFails(createStoreAs('dan', 'sD', 'shop-dan'))
+    await seed('users/dan', userDoc('free', null, new Date(Date.now() - DAY)))
+    await assertSucceeds(createStoreAs('dan', 'sD', 'shop-dan'))
+    await seed('users/eve', userDoc('free', null, new Date(Date.now() + DAY)))
+    await assertFails(createStoreAs('eve', 'sE', 'shop-eve'))
+    await seed('users/eve', userDoc('vip', new Date(Date.now() + DAY)))
+    await assertSucceeds(createStoreAs('eve', 'sE', 'shop-eve'))
   })
 })

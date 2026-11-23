@@ -2,7 +2,10 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import { PlatformShell } from '../../components/PlatformShell'
-import { Alert } from '../../components/ui'
+import { Alert, Spinner } from '../../components/ui'
+import { AdminZaloLink, FreeClosedNotice, PlanBadge } from '../../components/PlanBits'
+import { canChangeTemplate, canCreateStore, effectivePlan, limitsFor } from '../../lib/plans'
+import { usePlatformConfig } from '../../lib/usePlatformConfig'
 import { createStore, getDisabledTemplates, isSlugTaken } from '../../lib/db'
 import { pathStoreLabel } from '../../lib/urls'
 import { applySeo } from '../../lib/seo'
@@ -13,7 +16,10 @@ import { CATEGORIES, isTemplateId, TEMPLATES } from '../../templates'
 type SlugState = 'idle' | 'checking' | 'free' | 'taken' | 'invalid'
 
 export default function CreateStore() {
-  const { user } = useAuth()
+  const { user, account, accountLoading } = useAuth()
+  const { plans, settings, loading: cfgLoading } = usePlatformConfig()
+  const plan = effectivePlan(account)
+  const limits = limitsFor(plans, plan)
   const nav = useNavigate()
   const [sp] = useSearchParams()
   const initial = sp.get('mau') || ''
@@ -66,16 +72,31 @@ export default function CreateStore() {
     if (!/^[0-9+ .]{8,15}$/.test(phone.trim())) return setErr('Số điện thoại không hợp lệ.')
     setBusy(true)
     try {
-      const id = await createStore(user, { name, slug, template, phone, zalo: zaloSame ? phone : zalo, address }, samples)
+      const id = await createStore(user, { name, slug, template, phone, zalo: zaloSame ? phone : zalo, address }, samples, limits?.maxProducts)
       nav(`/quan-ly/${id}?moi=1`, { replace: true })
     } catch (e2) {
       const code = (e2 as { code?: string }).code
-      setErr(code === 'permission-denied' ? 'Tên miền phụ vừa có người dùng, vui lòng chọn tên khác.' : (e2 as Error).message)
-      if (code === 'permission-denied') setCheck({ slug, state: 'taken' })
+      const blocked = code === 'permission-denied' && !canCreateStore(settings, account)
+      setErr(blocked ? 'Hiện chỉ mở đăng ký VIP — liên hệ quản trị qua Zalo 0988474228' : code === 'permission-denied' ? 'Tên miền phụ vừa có người dùng, vui lòng chọn tên khác.' : (e2 as Error).message)
+      if (code === 'permission-denied' && !blocked) setCheck({ slug, state: 'taken' })
     } finally {
       setBusy(false)
     }
   }
+
+  if (cfgLoading || accountLoading) return <PlatformShell><Spinner full /></PlatformShell>
+  if (!canCreateStore(settings, account))
+    return (
+      <PlatformShell>
+        <div className="mx-auto max-w-lg px-4 py-10">
+          <div className="card space-y-2 text-center">
+            <div className="text-4xl">👑</div>
+            <h1 className="text-xl font-bold">Tạo cửa hàng mới</h1>
+            <Alert kind="warn"><FreeClosedNotice /></Alert>
+          </div>
+        </div>
+      </PlatformShell>
+    )
 
   return (
     <PlatformShell>
@@ -86,6 +107,14 @@ export default function CreateStore() {
         {step === 1 && (
           <>
             <p className="mt-1 text-sm text-slate-600">{TEMPLATES.length} mẫu · {CATEGORIES.length} ngành hàng – mỗi ngành 4 mẫu.</p>
+            <div className="mt-2"><PlanBadge plan={plan} vipExpiresAt={account?.vipExpiresAt} /></div>
+            {!canChangeTemplate(limits) && (
+              <div className="mt-3" data-testid="template-lock-note">
+                <Alert kind="info">
+                  Gói Thường chọn 1 giao diện cho cửa hàng – sau khi tạo sẽ khoá. Đổi giao diện cần VIP (liên hệ <AdminZaloLink />).
+                </Alert>
+              </div>
+            )}
             {CATEGORIES.map((c) => {
               const list = TEMPLATES.filter((t) => t.category === c.id && !disabled.includes(t.id))
               if (!list.length) return null

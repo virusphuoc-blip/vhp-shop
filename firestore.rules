@@ -48,6 +48,95 @@ service cloud.firestore {
       allow write: if isPlatformAdmin();
     }
 
+    // ---------- Gói Thường / VIP ----------
+    // platformConfig/plans: giới hạn từng gói; platformConfig/settings: công tắc "Chế độ miễn phí".
+    // Chưa có plans = chưa giới hạn; chưa có settings = chế độ miễn phí đang bật.
+    function cfgPath(id) {
+      return /databases/$(database)/documents/platformConfig/$(id);
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function validLimits(m) {
+      return m is map && m.keys().hasOnly(['maxTemplates', 'maxProducts'])
+        && m.maxTemplates is int && m.maxTemplates >= 1 && m.maxTemplates <= 1000
+        && m.maxProducts is int && m.maxProducts >= 0 && m.maxProducts <= 100000;
+    }
+
+    match /platformConfig/{docId} {
+      allow read: if true;
+      allow write: if isPlatformAdmin() && (
+        (docId == 'plans'
+          && request.resource.data.keys().hasOnly(['free', 'vip', 'updatedAt'])
+          && validLimits(request.resource.data.free)
+          && validLimits(request.resource.data.vip))
+        || (docId == 'settings'
+          && request.resource.data.keys().hasOnly(['freeMode', 'freeClosedAt', 'updatedAt'])
+          && request.resource.data.freeMode is bool
+          && (request.resource.data.freeClosedAt == null || request.resource.data.freeClosedAt is timestamp)));
+    }
+
+    function isVip(uid) {
+      return exists(userPath(uid))
+        && get(userPath(uid)).data.plan == 'vip'
+        && get(userPath(uid)).data.vipExpiresAt is timestamp
+        && get(userPath(uid)).data.vipExpiresAt > request.time;
+    }
+
+    function hasPlans() {
+      return exists(cfgPath('plans'));
+    }
+
+    function limitsFor(uid) {
+      return isVip(uid) ? get(cfgPath('plans')).data.vip : get(cfgPath('plans')).data.free;
+    }
+
+    // maxProducts = 0 nghĩa là không giới hạn.
+    function productsWithinLimit(uid, count) {
+      return !hasPlans() || limitsFor(uid).maxProducts == 0 || count <= limitsFor(uid).maxProducts;
+    }
+
+    // maxTemplates = 1: mẫu đã chọn khi tạo cửa hàng bị khoá; >= 2: được đổi mẫu.
+    function canChangeTemplate(uid) {
+      return !hasPlans() || limitsFor(uid).maxTemplates > 1;
+    }
+
+    function freeModeOn() {
+      return !exists(cfgPath('settings')) || get(cfgPath('settings')).data.freeMode == true;
+    }
+
+    // Tài khoản đã có trước khi tắt chế độ miễn phí vẫn tạo được cửa hàng.
+    function accountBeforeFreeClosed(uid) {
+      return exists(userPath(uid))
+        && get(cfgPath('settings')).data.freeClosedAt is timestamp
+        && get(userPath(uid)).data.createdAt < get(cfgPath('settings')).data.freeClosedAt;
+    }
+
+    function canCreateStore(uid) {
+      return freeModeOn() || isVip(uid) || accountBeforeFreeClosed(uid);
+    }
+
+    match /users/{uid} {
+      allow get: if (signedIn() && request.auth.uid == uid) || isPlatformAdmin();
+      allow list: if isPlatformAdmin();
+      // Người dùng chỉ tự tạo hồ sơ gói Thường; không tự nâng VIP.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['email', 'plan', 'vipExpiresAt', 'createdAt', 'updatedAt'])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.plan == 'free'
+        && request.resource.data.vipExpiresAt == null
+        && request.resource.data.createdAt == request.time;
+      allow create, update: if isPlatformAdmin()
+        && request.resource.data.keys().hasOnly(['email', 'plan', 'vipExpiresAt', 'createdAt', 'updatedAt'])
+        && request.resource.data.email is string
+        && request.resource.data.plan in ['free', 'vip']
+        && (request.resource.data.vipExpiresAt == null || request.resource.data.vipExpiresAt is timestamp)
+        && request.resource.data.createdAt is timestamp;
+      allow delete: if isPlatformAdmin();
+    }
+
     // ---------- Tên miền phụ (đảm bảo không trùng) ----------
     match /slugs/{slug} {
       allow get: if true;
@@ -80,7 +169,7 @@ service cloud.firestore {
     function storeKeys() {
       return ['ownerUid', 'ownerEmail', 'name', 'slug', 'template', 'phone', 'zalo', 'address', 'description',
         'openHours', 'shippingFee', 'freeShipFrom', 'theme', 'bank', 'customDomain', 'domainStatus', 'active',
-        'createdAt', 'updatedAt'];
+        'productCount', 'lastProductId', 'createdAt', 'updatedAt'];
     }
 
     function validStoreFields(d) {
@@ -97,7 +186,36 @@ service cloud.firestore {
         && d.theme is map
         && d.bank is map
         && str(d.customDomain, 0, 253)
-        && d.domainStatus in ['none', 'pending', 'done'];
+        && d.domainStatus in ['none', 'pending', 'done']
+        && (!('productCount' in d) || (d.productCount is int && d.productCount >= 0))
+        && (!('lastProductId' in d) || str(d.lastProductId, 0, 64));
+    }
+
+    function productPath(storeId, productId) {
+      return /databases/$(database)/documents/stores/$(storeId)/products/$(productId);
+    }
+
+    // Bộ đếm sản phẩm chỉ đổi cùng lúc với việc thêm/xoá đúng sản phẩm lastProductId.
+    function productCountValid(storeId) {
+      let before = resource.data.get('productCount', 0);
+      let after = request.resource.data.get('productCount', 0);
+      let pid = request.resource.data.get('lastProductId', '');
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['productCount', 'lastProductId'])
+        // Cửa hàng tạo trước v1.1.0 khởi tạo bộ đếm một lần.
+        || (!('productCount' in resource.data) && after is int && after >= 0
+          && request.resource.data.get('lastProductId', '') == resource.data.get('lastProductId', ''))
+        || (after == before + 1 && pid != '' && !exists(productPath(storeId, pid)) && existsAfter(productPath(storeId, pid)))
+        || (after == before - 1 && pid != '' && exists(productPath(storeId, pid)) && !existsAfter(productPath(storeId, pid)));
+    }
+
+    function variantOf(d) {
+      return d.theme.get('variant', '');
+    }
+
+    function templateUnchanged() {
+      return request.resource.data.template == resource.data.template
+        && (variantOf(request.resource.data) == variantOf(resource.data)
+          || (variantOf(resource.data) == '' && variantOf(request.resource.data) == request.resource.data.template));
     }
 
     match /stores/{storeId} {
@@ -113,14 +231,20 @@ service cloud.firestore {
         && request.resource.data.active == true
         && request.resource.data.customDomain == ''
         && request.resource.data.createdAt == request.time
+        && request.resource.data.get('productCount', 0) == 0
+        && request.resource.data.get('lastProductId', '') == ''
         && validStoreFields(request.resource.data)
+        && canCreateStore(request.auth.uid)
         && getAfter(/databases/$(database)/documents/slugs/$(request.resource.data.slug)).data.storeId == storeId;
 
       // Chủ shop sửa thông tin; không được đổi chủ, tên miền phụ, trạng thái bật/tắt (do nền tảng quản lý).
+      // Đổi mẫu giao diện chỉ khi gói cho phép.
       allow update: if (signedIn() && resource.data.ownerUid == request.auth.uid
           && !request.resource.data.diff(resource.data).affectedKeys()
                .hasAny(['ownerUid', 'ownerEmail', 'slug', 'active', 'createdAt'])
-          && validStoreFields(request.resource.data))
+          && validStoreFields(request.resource.data)
+          && productCountValid(storeId)
+          && (templateUnchanged() || canChangeTemplate(request.auth.uid)))
         || (isPlatformAdmin()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'updatedAt']));
 
@@ -146,8 +270,16 @@ service cloud.firestore {
 
       match /products/{productId} {
         allow read: if canReadStoreContent(storeId);
-        allow create, update: if isOwner(storeId) && validProduct(request.resource.data);
-        allow delete: if isOwner(storeId);
+        // Thêm sản phẩm phải tăng bộ đếm của cửa hàng trong cùng lần ghi và không vượt giới hạn gói.
+        allow create: if isOwner(storeId) && validProduct(request.resource.data)
+          && getAfter(storePath(storeId)).data.get('productCount', 0) == get(storePath(storeId)).data.get('productCount', 0) + 1
+          && getAfter(storePath(storeId)).data.get('lastProductId', '') == productId
+          && productsWithinLimit(request.auth.uid, getAfter(storePath(storeId)).data.get('productCount', 0));
+        allow update: if isOwner(storeId) && validProduct(request.resource.data);
+        allow delete: if isOwner(storeId) && (
+          get(storePath(storeId)).data.get('productCount', 0) == 0
+          || (getAfter(storePath(storeId)).data.get('productCount', 0) == get(storePath(storeId)).data.get('productCount', 0) - 1
+            && getAfter(storePath(storeId)).data.get('lastProductId', '') == productId));
       }
 
       // Ảnh tải lên (base64) tách riêng để danh sách sản phẩm nhẹ.

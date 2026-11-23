@@ -2,14 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { Alert } from '../../components/ui'
 import { setCustomDomain, setDomainStatus } from '../../lib/db'
 import { checkDomain, requiredRecords } from '../../lib/dns'
-import { ROOT_DOMAIN } from '../../lib/env'
+import { PLATFORM_ADMIN_ZALO as ADMIN_ZALO, ROOT_DOMAIN } from '../../lib/env'
 import { normalizeDomain } from '../../lib/slug'
 import type { DomainStatus } from '../../lib/types'
 import { pathStoreLabel, pathStoreUrl } from '../../lib/urls'
 import { zaloLink } from '../../lib/zalo'
 import { useDash } from './DashContext'
-
-const ADMIN_ZALO = '0988474228'
 
 const STATUS: Record<DomainStatus, { label: string; cls: string; desc: string }> = {
   none: { label: 'Chưa trỏ', cls: 'bg-slate-200 text-slate-700', desc: 'Chưa thấy bản ghi DNS đúng. Hãy thêm bản ghi bên dưới tại nơi bạn mua tên miền.' },

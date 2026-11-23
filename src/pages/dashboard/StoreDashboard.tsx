@@ -3,7 +3,9 @@ import { Link, NavLink, Route, Routes, useParams, useSearchParams } from 'react-
 import { useAuth } from '../../auth/AuthContext'
 import { PlatformShell } from '../../components/PlatformShell'
 import { Alert, Spinner } from '../../components/ui'
-import { getStore, listProducts } from '../../lib/db'
+import { getStore, initProductCount, listProducts } from '../../lib/db'
+import { PlanBadge } from '../../components/PlanBits'
+import { effectivePlan } from '../../lib/plans'
 import type { Product, Store } from '../../lib/types'
 import { pathStoreLabel, pathStoreUrl } from '../../lib/urls'
 import { getTemplate } from '../../templates'
@@ -30,7 +32,7 @@ const TABS = [
 
 export default function StoreDashboard() {
   const { storeId = '' } = useParams()
-  const { user } = useAuth()
+  const { user, account } = useAuth()
   const [sp] = useSearchParams()
   const [store, setStore] = useState<Store | null>(null)
   const [products, setProducts] = useState<Product[]>([])
@@ -43,7 +45,15 @@ export default function StoreDashboard() {
   useEffect(() => {
     let cancelled = false
     Promise.all([getStore(storeId), listProducts(storeId)]).then(
-      ([s, ps]) => {
+      async ([s, ps]) => {
+        if (s && s.productCount === undefined) {
+          try {
+            await initProductCount(s.id, ps.length)
+            s.productCount = ps.length
+          } catch {
+            /* không phải chủ shop */
+          }
+        }
         if (cancelled) return
         if (!s) setErr('Không tìm thấy cửa hàng.')
         else {
@@ -87,6 +97,7 @@ export default function StoreDashboard() {
               <a href={pathStoreUrl(store.slug)} target="_blank" rel="noreferrer" className="block truncate text-sm text-indigo-600 hover:underline">
                 {pathStoreLabel(store.slug)}
               </a>
+              <div className="mt-1"><PlanBadge plan={effectivePlan(account)} vipExpiresAt={account?.vipExpiresAt} /></div>
             </div>
             <a href={pathStoreUrl(store.slug)} target="_blank" rel="noreferrer" className="btn-ghost">Xem cửa hàng ↗</a>
           </div>

@@ -1,9 +1,14 @@
 import { useState } from 'react'
 import { Alert } from '../../components/ui'
-import { defaultTheme, updateStore } from '../../lib/db'
+import { changeStoreTemplate, defaultTheme, updateStore } from '../../lib/db'
+import { useAuth } from '../../auth/AuthContext'
+import { AdminZaloLink } from '../../components/PlanBits'
+import { canChangeTemplate, effectivePlan, limitsFor } from '../../lib/plans'
+import { usePlatformConfig } from '../../lib/usePlatformConfig'
+import type { TemplateId } from '../../lib/types'
 import { compressImage, dataUrlKB, IMAGE_LIMITS, isImageUrl } from '../../lib/image'
 import type { StoreTheme } from '../../lib/types'
-import { getTemplate } from '../../templates'
+import { CATEGORIES, getTemplate, TEMPLATES } from '../../templates'
 import { useDash } from './DashContext'
 
 function ImagePicker({ label, value, onChange, limit, transparent }: { label: string; value: string; onChange: (v: string) => void; limit: { maxDim: number; maxKB: number }; transparent?: boolean }) {
@@ -46,6 +51,81 @@ function ImagePicker({ label, value, onChange, limit, transparent }: { label: st
   )
 }
 
+function TemplateSwitcher({ onChanged }: { onChanged: (theme: StoreTheme) => void }) {
+  const { store, setStore } = useDash()
+  const { account } = useAuth()
+  const { plans } = usePlatformConfig()
+  const allowed = canChangeTemplate(limitsFor(plans, effectivePlan(account)))
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const t = getTemplate(store.template)
+  const pick = async (id: TemplateId) => {
+    if (id === store.template) return
+    if (!confirm(`Đổi sang mẫu "${getTemplate(id).name}"?`)) return
+    setErr('')
+    setBusy(true)
+    try {
+      const theme = await changeStoreTemplate(store, id)
+      setStore({ ...store, template: id, theme })
+      onChanged(theme)
+      setOpen(false)
+    } catch (e) {
+      setErr((e as { code?: string }).code === 'permission-denied' ? 'Đổi giao diện cần VIP.' : (e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="card" data-testid="template-switcher">
+      <div className="flex items-center gap-3">
+        <span className="text-3xl">{t.icon}</span>
+        <div className="min-w-0 flex-1 text-sm">
+          <div className="text-slate-500">Mẫu đang dùng</div>
+          <div className="font-bold" data-testid="current-template">{t.name}</div>
+          <div className="text-xs text-slate-600">{t.tagline}</div>
+        </div>
+        {allowed && (
+          <button type="button" className="btn-ghost shrink-0" onClick={() => setOpen((x) => !x)}>
+            {open ? 'Đóng' : 'Đổi mẫu'}
+          </button>
+        )}
+      </div>
+      {!allowed && (
+        <p className="mt-3 rounded-lg bg-amber-50 p-2 text-sm text-amber-900" data-testid="template-locked">
+          🔒 Gói Thường dùng 1 giao diện. Đổi giao diện cần VIP — liên hệ quản trị qua <AdminZaloLink />.
+        </p>
+      )}
+      {err && <div className="mt-3"><Alert>{err}</Alert></div>}
+      {allowed && open && (
+        <div className="mt-4 space-y-4">
+          <p className="text-xs text-slate-500">{TEMPLATES.length} mẫu – logo, banner và nội dung đã sửa được giữ nguyên.</p>
+          {CATEGORIES.map((c) => (
+            <section key={c.id}>
+              <h3 className="text-sm font-bold text-slate-700">{c.icon} {c.name}</h3>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {TEMPLATES.filter((x) => x.category === c.id).map((x) => (
+                  <button
+                    key={x.id}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => pick(x.id)}
+                    aria-pressed={x.id === store.template}
+                    className={`flex items-center gap-2 rounded-xl border-2 p-2 text-left text-sm ${x.id === store.template ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200 hover:border-slate-300'}`}
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xl" style={{ background: x.palette.bg, border: `2px solid ${x.palette.primary}` }}>{x.icon}</span>
+                    <span className="font-semibold">{x.name}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AppearanceTab() {
   const { store, setStore } = useDash()
   const t = getTemplate(store.template)
@@ -71,9 +151,9 @@ export default function AppearanceTab() {
   }
   return (
     <div className="space-y-4">
+      <TemplateSwitcher onChanged={setTheme} />
       <div className="card">
-        <div className="text-sm text-slate-600">Mẫu: <b>{t.icon} {t.name}</b> – {t.tagline}</div>
-        <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {(['primary', 'accent'] as const).map((k) => (
             <label key={k} className="block">
               <span className="label">{k === 'primary' ? 'Màu chính' : 'Màu nhấn'}</span>

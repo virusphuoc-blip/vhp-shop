@@ -5,6 +5,9 @@ import { compressImage, dataUrlKB, IMAGE_LIMITS, isImageUrl, MAX_UPLOADS_PER_PRO
 import { formatVND } from '../../lib/money'
 import type { Product } from '../../lib/types'
 import { getTemplate } from '../../templates'
+import { useAuth } from '../../auth/AuthContext'
+import { canAddProduct, effectivePlan, formatLimit, limitsFor, PLAN_LABEL, productLimitMessage } from '../../lib/plans'
+import { usePlatformConfig } from '../../lib/usePlatformConfig'
 import { useDash } from './DashContext'
 
 interface Draft {
@@ -39,8 +42,16 @@ function toDraft(p: Product | null, defaultCat: string): Draft {
   }
 }
 
+function usePlanLimits() {
+  const { account } = useAuth()
+  const { plans } = usePlatformConfig()
+  const plan = effectivePlan(account)
+  return { plan, limits: limitsFor(plans, plan) }
+}
+
 function Editor({ initial, onClose }: { initial: Draft; onClose: () => void }) {
-  const { store, reloadProducts } = useDash()
+  const { store, setStore, reloadProducts } = useDash()
+  const { plan, limits } = usePlanLimits()
   const t = getTemplate(store.template)
   const [d, setD] = useState(initial)
   const [err, setErr] = useState('')
@@ -101,11 +112,14 @@ function Editor({ initial, onClose }: { initial: Draft; onClose: () => void }) {
         sizes: d.sizes,
         active: d.active,
       }
-      await saveProduct(store.id, d.id, data, d.uploads)
+      if (!d.id && !canAddProduct(limits, store.productCount ?? 0)) throw new Error(productLimitMessage(limits?.maxProducts ?? 0))
+      await saveProduct(store.id, d.id, data, d.uploads, store.productCount ?? 0)
+      if (!d.id) setStore({ ...store, productCount: (store.productCount ?? 0) + 1 })
       await reloadProducts()
       onClose()
     } catch (e2) {
-      setErr((e2 as { code?: string }).code === 'permission-denied' ? 'Không lưu được: dữ liệu không hợp lệ hoặc vượt giới hạn dung lượng.' : (e2 as Error).message)
+      const denied = (e2 as { code?: string }).code === 'permission-denied'
+      setErr(denied && !d.id && plan === 'free' && limits?.maxProducts ? productLimitMessage(limits.maxProducts) : denied ? 'Không lưu được: dữ liệu không hợp lệ hoặc vượt giới hạn dung lượng.' : (e2 as Error).message)
     } finally {
       setBusy(false)
     }
@@ -212,7 +226,10 @@ function Editor({ initial, onClose }: { initial: Draft; onClose: () => void }) {
 }
 
 export default function ProductsTab() {
-  const { store, products, reloadProducts } = useDash()
+  const { store, setStore, products, reloadProducts } = useDash()
+  const { plan, limits } = usePlanLimits()
+  const count = store.productCount ?? products.length
+  const full = !canAddProduct(limits, count)
   const t = getTemplate(store.template)
   const [editing, setEditing] = useState<Draft | null>(null)
   const [q, setQ] = useState('')
@@ -220,6 +237,7 @@ export default function ProductsTab() {
 
   const open = async (p: Product | null) => {
     setErr('')
+    if (!p && full) return setErr(productLimitMessage(limits?.maxProducts ?? 0))
     const draft = toDraft(p, t.categories[0])
     if (p?.uploadCount) {
       try {
@@ -234,7 +252,8 @@ export default function ProductsTab() {
   const remove = async (p: Product) => {
     if (!confirm(`Xoá "${p.name}"?`)) return
     try {
-      await deleteProduct(store.id, p.id)
+      await deleteProduct(store.id, p.id, store.productCount ?? 0)
+      if (store.productCount) setStore({ ...store, productCount: store.productCount - 1 })
       await reloadProducts()
     } catch (e) {
       setErr((e as Error).message)
@@ -248,6 +267,9 @@ export default function ProductsTab() {
         <input type="search" className="field" placeholder="Tìm sản phẩm..." value={q} onChange={(e) => setQ(e.target.value)} aria-label="Tìm sản phẩm" />
         <button type="button" className="btn-primary shrink-0" onClick={() => open(null)}>+ Thêm</button>
       </div>
+      <p className="mt-2 text-xs text-slate-500" data-testid="product-quota">
+        Gói {PLAN_LABEL[plan]}: {count} sản phẩm{limits ? ` / ${formatLimit(limits.maxProducts, 'sản phẩm')}` : ''}
+      </p>
       {err && <div className="mt-3"><Alert>{err}</Alert></div>}
       <ul className="mt-4 space-y-2">
         {list.map((p) => (

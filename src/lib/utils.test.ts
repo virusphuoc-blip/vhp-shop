@@ -117,3 +117,31 @@ describe('templates', async () => {
     expect(resolveTemplateId('cafe', 'xe-may-the-thao')).toBe('cafe')
   })
 })
+
+describe('plans', async () => {
+  const { effectivePlan, canAddProduct, canChangeTemplate, canCreateStore } = await import('./plans')
+  const now = Date.UTC(2026, 10, 24)
+  const acc = (plan: 'free' | 'vip', vipExpiresAt?: number, createdAt = now - 1000) => ({ uid: 'u', email: 'a@b.vn', plan, vipExpiresAt, createdAt })
+  it('VIP hết hạn thì về Thường', () => {
+    expect(effectivePlan(acc('vip', now + 1), now)).toBe('vip')
+    expect(effectivePlan(acc('vip', now - 1), now)).toBe('free')
+    expect(effectivePlan(null, now)).toBe('free')
+  })
+  it('giới hạn sản phẩm và mẫu đọc từ cấu hình', () => {
+    expect(canAddProduct({ maxTemplates: 1, maxProducts: 10 }, 9)).toBe(true)
+    expect(canAddProduct({ maxTemplates: 1, maxProducts: 10 }, 10)).toBe(false)
+    expect(canAddProduct({ maxTemplates: 1, maxProducts: 5 }, 6)).toBe(false)
+    expect(canAddProduct({ maxTemplates: 32, maxProducts: 0 }, 500)).toBe(true)
+    expect(canAddProduct(null, 500)).toBe(true)
+    expect(canChangeTemplate({ maxTemplates: 1, maxProducts: 10 })).toBe(false)
+    expect(canChangeTemplate({ maxTemplates: 32, maxProducts: 0 })).toBe(true)
+  })
+  it('tắt chế độ miễn phí chỉ chặn tài khoản Thường mới', () => {
+    const closed = { freeMode: false, freeClosedAt: now }
+    expect(canCreateStore({ freeMode: true }, acc('free'), now)).toBe(true)
+    expect(canCreateStore(closed, acc('free', undefined, now - 1), now)).toBe(true)
+    expect(canCreateStore(closed, acc('free', undefined, now + 1), now)).toBe(false)
+    expect(canCreateStore(closed, null, now)).toBe(false)
+    expect(canCreateStore(closed, acc('vip', now + 1, now + 1), now)).toBe(true)
+  })
+})

@@ -55,6 +55,8 @@ export interface Store {
   customDomain: string
   domainStatus: DomainStatus
   active: boolean
+  /** Số sản phẩm hiện có (bộ đếm dùng cho giới hạn gói). Cửa hàng trước v1.1.0 chưa có. */
+  productCount?: number
   createdAt?: number
 }
 
@@ -140,4 +142,31 @@ export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   cod: 'Thanh toán khi nhận hàng (COD)',
   bank: 'Chuyển khoản / VietQR',
   zalo: 'Đặt qua Zalo',
+}
+
+export type Plan = 'free' | 'vip'
+
+export interface UserAccount {
+  uid: string
+  email: string
+  plan: Plan
+  vipExpiresAt?: number
+  createdAt?: number
+}
+
+export interface PlanLimits {
+  /** 1 = khoá mẫu đã chọn khi tạo cửa hàng; >= 2 = được đổi mẫu. */
+  maxTemplates: number
+  /** 0 = không giới hạn. */
+  maxProducts: number
+}
+
+export interface PlansConfig {
+  free: PlanLimits
+  vip: PlanLimits
+}
+
+export interface PlatformSettings {
+  freeMode: boolean
+  freeClosedAt?: number
 }

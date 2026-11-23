@@ -5,10 +5,13 @@ import { loginGoogle, logout } from '../../auth/actions'
 import { NotConfigured } from '../../components/NotConfigured'
 import { PlatformShell } from '../../components/PlatformShell'
 import { Alert, Spinner } from '../../components/ui'
-import { countOrders, getDisabledTemplates, listAllStores, setDisabledTemplates, setStoreActive } from '../../lib/db'
+import { countOrders, getDisabledTemplates, listAllStores, listUserAccounts, savePlansConfig, setDisabledTemplates, setFreeMode, setStoreActive, setUserPlan } from '../../lib/db'
+import { PlanBadge } from '../../components/PlanBits'
+import { effectivePlan, formatLimit } from '../../lib/plans'
+import { usePlatformConfig } from '../../lib/usePlatformConfig'
 import { firebaseConfigured } from '../../lib/firebase'
 import { applySeo } from '../../lib/seo'
-import type { Store } from '../../lib/types'
+import type { Plan, PlanLimits, PlansConfig, Store, UserAccount } from '../../lib/types'
 import { pathStoreLabel, pathStoreUrl } from '../../lib/urls'
 import { getTemplate, TEMPLATES } from '../../templates'
 
@@ -26,6 +29,205 @@ async function mapLimit<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): 
     }),
   )
   return out
+}
+
+function PlanSettings() {
+  const { plans, settings, loading, reload } = usePlatformConfig()
+  const [draft, setDraft] = useState<Record<string, string> | null>(null)
+  const [msg, setMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  if (loading) return <Spinner />
+  const freeOn = !settings || settings.freeMode
+  const fields: [keyof PlansConfig, keyof PlanLimits, string][] = [
+    ['free', 'maxTemplates', 'Thường – số giao diện tối đa'],
+    ['free', 'maxProducts', 'Thường – số sản phẩm tối đa'],
+    ['vip', 'maxTemplates', 'VIP – số giao diện tối đa'],
+    ['vip', 'maxProducts', 'VIP – số sản phẩm tối đa'],
+  ]
+  const values = draft || Object.fromEntries(fields.map(([p, k]) => [`${p}.${k}`, plans ? String(plans[p][k]) : '']))
+  const toggleFree = async () => {
+    setMsg(null)
+    setBusy(true)
+    try {
+      await setFreeMode(!freeOn)
+      await reload()
+    } catch (e) {
+      setMsg({ kind: 'error', text: (e as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  const save = async () => {
+    setMsg(null)
+    const n = (k: string) => Number(values[k])
+    const bad = fields.find(([p, k]) => !Number.isInteger(n(`${p}.${k}`)) || n(`${p}.${k}`) < (k === 'maxTemplates' ? 1 : 0) || values[`${p}.${k}`] === '')
+    if (bad) return setMsg({ kind: 'error', text: `Giá trị không hợp lệ: ${bad[2]}. Số giao diện ≥ 1; số sản phẩm ≥ 0 (0 = không giới hạn).` })
+    setBusy(true)
+    try {
+      await savePlansConfig({
+        free: { maxTemplates: n('free.maxTemplates'), maxProducts: n('free.maxProducts') },
+        vip: { maxTemplates: n('vip.maxTemplates'), maxProducts: n('vip.maxProducts') },
+      })
+      await reload()
+      setDraft(null)
+      setMsg({ kind: 'success', text: 'Đã lưu giới hạn gói.' })
+    } catch (e) {
+      setMsg({ kind: 'error', text: (e as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="grid gap-3 md:grid-cols-2" data-testid="plan-settings">
+      <div className="card space-y-2">
+        <h2 className="font-bold">Chế độ miễn phí</h2>
+        <label className="flex cursor-pointer items-center justify-between gap-3">
+          <span className="text-sm">{freeOn ? 'BẬT – cho tạo tài khoản Thường mới' : 'TẮT – chỉ mở đăng ký VIP'}</span>
+          <input type="checkbox" className="peer sr-only" checked={freeOn} disabled={busy} onChange={toggleFree} aria-label="Chế độ miễn phí" data-testid="free-mode-toggle" />
+          <span className="relative h-6 w-11 shrink-0 rounded-full bg-slate-300 transition peer-checked:bg-emerald-500 after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-5" />
+        </label>
+        {!freeOn && settings?.freeClosedAt && (
+          <p className="text-xs text-slate-500">Tắt lúc {new Date(settings.freeClosedAt).toLocaleString('vi-VN')}. Tài khoản Thường có từ trước vẫn dùng bình thường.</p>
+        )}
+      </div>
+      <div className="card space-y-2">
+        <h2 className="font-bold">Giới hạn gói</h2>
+        {!plans && <Alert kind="warn">Chưa cấu hình giới hạn – hiện chưa giới hạn gói nào. Nhập số rồi bấm Lưu.</Alert>}
+        <div className="grid grid-cols-2 gap-2">
+          {fields.map(([p, k, label]) => (
+            <label key={`${p}.${k}`} className="block">
+              <span className="label text-xs">{label}</span>
+              <input
+                type="number"
+                min={k === 'maxTemplates' ? 1 : 0}
+                className="field"
+                value={values[`${p}.${k}`]}
+                onChange={(e) => setDraft({ ...values, [`${p}.${k}`]: e.target.value })}
+                data-testid={`limit-${p}-${k}`}
+              />
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500">Giao diện: 1 = khoá mẫu đã chọn, ≥ 2 = được đổi mẫu. Sản phẩm: 0 = không giới hạn.</p>
+        {plans && (
+          <p className="text-xs text-slate-600">
+            Đang áp dụng: Thường {formatLimit(plans.free.maxProducts, 'sản phẩm')} · VIP {formatLimit(plans.vip.maxProducts, 'sản phẩm')}
+          </p>
+        )}
+        {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+        <button type="button" className="btn-primary w-full" disabled={busy} onClick={save}>Lưu giới hạn</button>
+      </div>
+    </section>
+  )
+}
+
+interface AccountRow {
+  uid: string
+  email: string
+  account: UserAccount | null
+  storeCount: number
+  createdAt?: number
+}
+
+function addMonths(base: number, months: number): Date {
+  const d = new Date(base)
+  d.setMonth(d.getMonth() + months)
+  return d
+}
+
+function Accounts({ stores }: { stores: Store[] }) {
+  const [accounts, setAccounts] = useState<UserAccount[] | null>(null)
+  const [err, setErr] = useState('')
+  const [q, setQ] = useState('')
+  const [busyUid, setBusyUid] = useState('')
+  const [customDate, setCustomDate] = useState<Record<string, string>>({})
+  const [now] = useState(() => Date.now())
+  useEffect(() => {
+    listUserAccounts().then(setAccounts, (e) => setErr((e as Error).message))
+  }, [])
+  const rows = useMemo<AccountRow[]>(() => {
+    const map = new Map<string, AccountRow>()
+    for (const a of accounts || []) map.set(a.uid, { uid: a.uid, email: a.email, account: a, storeCount: 0, createdAt: a.createdAt })
+    for (const s of stores) {
+      const r = map.get(s.ownerUid) || { uid: s.ownerUid, email: s.ownerEmail, account: null, storeCount: 0, createdAt: s.createdAt }
+      r.storeCount++
+      if (s.createdAt && (!r.createdAt || s.createdAt < r.createdAt)) r.createdAt = r.account?.createdAt ?? s.createdAt
+      map.set(s.ownerUid, r)
+    }
+    const nq = q.toLowerCase()
+    return [...map.values()].filter((r) => !nq || r.email.toLowerCase().includes(nq)).sort((a, b) => a.email.localeCompare(b.email))
+  }, [accounts, stores, q])
+
+  const apply = async (r: AccountRow, plan: Plan, expires: Date | null) => {
+    setErr('')
+    setBusyUid(r.uid)
+    try {
+      await setUserPlan({ uid: r.uid, email: r.email, createdAt: r.createdAt }, plan, expires)
+      setAccounts(await listUserAccounts())
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusyUid('')
+    }
+  }
+  if (!accounts && !err) return <Spinner />
+  return (
+    <section data-testid="accounts">
+      <h2 className="text-lg font-bold">Tài khoản & gói</h2>
+      <input type="search" className="field mt-2" placeholder="Tìm theo email..." value={q} onChange={(e) => setQ(e.target.value)} aria-label="Tìm tài khoản" />
+      {err && <div className="mt-2"><Alert>{err}</Alert></div>}
+      <ul className="mt-3 space-y-2">
+        {rows.map((r) => {
+          const plan = effectivePlan(r.account, now)
+          const vipValid = plan === 'vip'
+          const base = vipValid && r.account?.vipExpiresAt ? r.account.vipExpiresAt : now
+          const busy = busyUid === r.uid
+          return (
+            <li key={r.uid} className="card space-y-2 p-3" data-testid="account-row">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="min-w-0 flex-1 truncate font-semibold">{r.email || r.uid}</span>
+                <PlanBadge plan={plan} vipExpiresAt={r.account?.vipExpiresAt} />
+              </div>
+              <div className="text-xs text-slate-500">
+                {r.storeCount} cửa hàng
+                {r.account?.plan === 'vip' && !vipValid && r.account.vipExpiresAt ? ` · VIP đã hết hạn ${new Date(r.account.vipExpiresAt).toLocaleDateString('vi-VN')}` : ''}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {[1, 3, 6, 12].map((m) => (
+                  <button key={m} type="button" disabled={busy} className="btn-ghost px-2.5 py-1 text-xs" onClick={() => apply(r, 'vip', addMonths(base, m))}>
+                    {vipValid ? `Gia hạn ${m} tháng` : `VIP ${m} tháng`}
+                  </button>
+                ))}
+                {r.account?.plan === 'vip' && (
+                  <button type="button" disabled={busy} className="btn-ghost px-2.5 py-1 text-xs text-rose-600" onClick={() => apply(r, 'free', null)}>
+                    Thu hồi VIP (về Thường)
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-1.5">
+                <input
+                  type="date"
+                  className="field py-1 text-xs"
+                  value={customDate[r.uid] || ''}
+                  onChange={(e) => setCustomDate({ ...customDate, [r.uid]: e.target.value })}
+                  aria-label={`Hạn VIP tuỳ chọn cho ${r.email}`}
+                />
+                <button
+                  type="button"
+                  disabled={busy || !customDate[r.uid]}
+                  className="btn-primary shrink-0 px-3 py-1 text-xs"
+                  onClick={() => apply(r, 'vip', new Date(`${customDate[r.uid]}T23:59:59`))}
+                >
+                  Đặt hạn VIP
+                </button>
+              </div>
+            </li>
+          )
+        })}
+        {!rows.length && <li className="py-6 text-center text-slate-500">Chưa có tài khoản.</li>}
+      </ul>
+    </section>
+  )
 }
 
 function Dashboard() {
@@ -90,6 +292,10 @@ function Dashboard() {
         <div className="card text-center"><div className="text-2xl font-extrabold" data-testid="stat-orders-today">{totalToday}</div><div className="text-xs text-slate-500">Đơn hôm nay</div></div>
         <div className="card text-center"><div className="text-2xl font-extrabold">{pendingDomains.length}</div><div className="text-xs text-slate-500">Tên miền chờ gắn</div></div>
       </div>
+
+      <PlanSettings />
+
+      <Accounts stores={stores} />
 
       {pendingDomains.length > 0 && (
         <div className="card">
