@@ -86,7 +86,7 @@ service cloud.firestore {
     function validStoreFields(d) {
       return d.keys().hasOnly(storeKeys())
         && str(d.name, 1, 80)
-        && d.template in ['xe-may', 'do-choi', 'quan-ao', 'cafe', 'tap-hoa', 'do-an']
+        && d.template in ['xe-may', 'do-choi', 'quan-ao', 'cafe', 'tap-hoa', 'do-an', 'dien-tu', 'noi-that']
         && str(d.phone, 0, 20)
         && str(d.zalo, 0, 20)
         && str(d.address, 0, 300)

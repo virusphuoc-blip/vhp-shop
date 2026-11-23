@@ -102,12 +102,17 @@ describe('templates', async () => {
     }
   })
   it('stores only rule-allowed template ids and resolves the variant back', () => {
-    const allowed = ['xe-may', 'do-choi', 'quan-ao', 'cafe', 'tap-hoa', 'do-an']
+    const allowed = ['xe-may', 'do-choi', 'quan-ao', 'cafe', 'tap-hoa', 'do-an', 'dien-tu', 'noi-that']
     for (const t of TEMPLATES) {
       const stored = storedTemplateId(t.id)
       expect(allowed).toContain(stored)
       expect(resolveTemplateId(stored, t.id)).toBe(t.id)
     }
+    expect(storedTemplateId('dien-tu-cong-nghe')).toBe('dien-tu')
+    expect(storedTemplateId('noi-that')).toBe('noi-that')
+    expect(resolveTemplateId('tap-hoa', 'dien-tu-cong-nghe')).toBe('dien-tu-cong-nghe')
+    expect(resolveTemplateId('quan-ao', 'noi-that-go')).toBe('noi-that-go')
+    expect(resolveTemplateId('tap-hoa', 'tap-hoa-24h')).toBe('tap-hoa-24h')
     expect(resolveTemplateId('cafe', undefined)).toBe('cafe')
     expect(resolveTemplateId('cafe', 'xe-may-the-thao')).toBe('cafe')
   })

@@ -1,8 +1,8 @@
 /** Giá trị firestore.rules cho phép ở trường `template` của cửa hàng. */
-export type StoredTemplateId = 'xe-may' | 'do-choi' | 'quan-ao' | 'cafe' | 'tap-hoa' | 'do-an'
+export type StoredTemplateId = 'xe-may' | 'do-choi' | 'quan-ao' | 'cafe' | 'tap-hoa' | 'do-an' | 'dien-tu' | 'noi-that'
 
 /** Ngành hàng (mỗi ngành có 4 mẫu). */
-export type CategoryId = StoredTemplateId | 'dien-tu' | 'noi-that'
+export type CategoryId = StoredTemplateId
 
 export type TemplateId =
   | CategoryId

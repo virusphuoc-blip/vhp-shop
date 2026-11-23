@@ -599,24 +599,19 @@ export function isTemplateId(id: string): id is TemplateId {
   return TEMPLATES.some((t) => t.id === id)
 }
 
-/** Ngành Điện tử/Nội thất chưa có trong firestore.rules nên lưu dưới một id ngành cũ; mẫu thật nằm ở `theme.variant`. */
-const STORED_AS: Record<CategoryId, StoredTemplateId> = {
-  'xe-may': 'xe-may',
-  'do-choi': 'do-choi',
-  'quan-ao': 'quan-ao',
-  cafe: 'cafe',
-  'tap-hoa': 'tap-hoa',
-  'do-an': 'do-an',
-  'dien-tu': 'tap-hoa',
-  'noi-that': 'quan-ao',
+/** Trường `template` lưu id ngành hàng; mẫu cụ thể nằm ở `theme.variant`. */
+export function storedTemplateId(id: TemplateId): StoredTemplateId {
+  return getTemplate(id).category
 }
 
-export function storedTemplateId(id: TemplateId): StoredTemplateId {
-  return STORED_AS[getTemplate(id).category]
-}
+/** Cửa hàng tạo trước khi rules cho phép 'dien-tu'/'noi-that' đã lưu các ngành này dưới id cũ. */
+const LEGACY_STORED_AS: Partial<Record<CategoryId, StoredTemplateId>> = { 'dien-tu': 'tap-hoa', 'noi-that': 'quan-ao' }
 
 /** Mẫu hiển thị của cửa hàng từ trường `template` đã lưu và `theme.variant`. */
 export function resolveTemplateId(stored: string, variant?: string): TemplateId {
-  if (variant && isTemplateId(variant) && storedTemplateId(variant) === stored) return variant
+  if (variant && isTemplateId(variant)) {
+    const category = getTemplate(variant).category
+    if (category === stored || LEGACY_STORED_AS[category] === stored) return variant
+  }
   return getTemplate(stored).id
 }

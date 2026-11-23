@@ -71,10 +71,10 @@ function order(extra: Record<string, unknown> = {}) {
   }
 }
 
-async function createStoreAs(uid: string, storeId: string, slug: string) {
+async function createStoreAs(uid: string, storeId: string, slug: string, extra: Record<string, unknown> = {}) {
   const db = env.authenticatedContext(uid, { email: `${uid}@test.vn` }).firestore()
   const b = writeBatch(db)
-  b.set(doc(db, 'stores', storeId), storeData(uid, slug))
+  b.set(doc(db, 'stores', storeId), storeData(uid, slug, extra))
   b.set(doc(db, 'slugs', slug), { storeId, ownerUid: uid })
   await b.commit()
 }
@@ -99,6 +99,11 @@ beforeEach(async () => {
 describe('cửa hàng', () => {
   it('chủ shop tạo cửa hàng + slug', async () => {
     await assertSucceeds(createStoreAs('bob', 'sB', 'shop-bob'))
+  })
+  it('cho phép ngành Điện tử / Nội thất, chặn id mẫu lạ', async () => {
+    await assertSucceeds(createStoreAs('bob', 'sDT', 'shop-dien-tu', { template: 'dien-tu' }))
+    await assertSucceeds(createStoreAs('bob', 'sNT', 'shop-noi-that', { template: 'noi-that' }))
+    await assertFails(createStoreAs('bob', 'sXX', 'shop-la', { template: 'dien-tu-cong-nghe' }))
   })
   it('không chiếm slug đã có', async () => {
     await assertFails(createStoreAs('bob', 'sB', 'shop-alice'))
