@@ -5,7 +5,7 @@ import { PlatformShell } from '../../components/PlatformShell'
 import { Alert, Spinner } from '../../components/ui'
 import { getStore, listProducts } from '../../lib/db'
 import type { Product, Store } from '../../lib/types'
-import { pathStoreUrl, subdomainUrl } from '../../lib/urls'
+import { pathStoreLabel, pathStoreUrl } from '../../lib/urls'
 import { getTemplate } from '../../templates'
 import { DashContext } from './DashContext'
 import Overview from './Overview'
@@ -84,8 +84,8 @@ export default function StoreDashboard() {
             <span className="text-3xl">{t.icon}</span>
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-xl font-extrabold" data-testid="dash-store-name">{store.name}</h1>
-              <a href={subdomainUrl(store.slug)} target="_blank" rel="noreferrer" className="block truncate text-sm text-indigo-600 hover:underline">
-                {subdomainUrl(store.slug).replace('https://', '')}
+              <a href={pathStoreUrl(store.slug)} target="_blank" rel="noreferrer" className="block truncate text-sm text-indigo-600 hover:underline">
+                {pathStoreLabel(store.slug)}
               </a>
             </div>
             <a href={pathStoreUrl(store.slug)} target="_blank" rel="noreferrer" className="btn-ghost">Xem cửa hàng ↗</a>

@@ -4,7 +4,7 @@ import { useAuth } from '../../auth/AuthContext'
 import { PlatformShell } from '../../components/PlatformShell'
 import { Alert } from '../../components/ui'
 import { createStore, getDisabledTemplates, isSlugTaken } from '../../lib/db'
-import { ROOT_DOMAIN } from '../../lib/env'
+import { pathStoreLabel } from '../../lib/urls'
 import { applySeo } from '../../lib/seo'
 import { slugify, validateSlug } from '../../lib/slug'
 import type { TemplateId } from '../../lib/types'
@@ -144,11 +144,10 @@ export default function CreateStore() {
                   }}
                   required
                 />
-                <span className="flex items-center bg-slate-100 px-2 text-sm text-slate-600">.{ROOT_DOMAIN}</span>
               </div>
               <p className="mt-1 text-sm" aria-live="polite">
                 {slugState === 'checking' && <span className="text-slate-500">Đang kiểm tra...</span>}
-                {slugState === 'free' && <span className="text-emerald-600">✓ Có thể sử dụng: {slug}.{ROOT_DOMAIN}</span>}
+                {slugState === 'free' && <span className="text-emerald-600">✓ Có thể sử dụng: {pathStoreLabel(slug)}</span>}
                 {slugState === 'taken' && <span className="text-rose-600">✗ Tên này đã có cửa hàng sử dụng, hãy sửa lại.</span>}
                 {slugState === 'invalid' && <span className="text-rose-600">{slugMsg}</span>}
               </p>

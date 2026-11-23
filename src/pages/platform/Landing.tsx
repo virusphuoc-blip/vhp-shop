@@ -2,12 +2,12 @@ import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { PlatformShell } from '../../components/PlatformShell'
 import { useAuth } from '../../auth/AuthContext'
-import { ROOT_DOMAIN } from '../../lib/env'
+import { pathStoreLabel } from '../../lib/urls'
 import { applySeo } from '../../lib/seo'
 import { TEMPLATES } from '../../templates'
 
 const FEATURES = [
-  { icon: '🌐', title: 'Tên miền riêng', text: `Cửa hàng chạy ngay ở ten-cua-hang.${ROOT_DOMAIN}, gắn thêm tên miền của bạn khi cần.` },
+  { icon: '🌐', title: 'Tên miền riêng', text: `Cửa hàng chạy ngay ở ${pathStoreLabel('ten-cua-hang')}, gắn thêm tên miền của bạn khi cần.` },
   { icon: '📦', title: 'Quản lý sản phẩm & đơn', text: 'Thêm sản phẩm, tồn kho, giá cũ – giá mới; theo dõi đơn theo trạng thái.' },
   { icon: '💳', title: 'COD · VietQR · Zalo', text: 'Khách đặt hàng trả tiền khi nhận, quét mã VietQR chuyển khoản hoặc chat Zalo.' },
   { icon: '🏷️', title: 'Mã giảm giá', text: 'Tạo mã giảm theo % hoặc số tiền, đơn tối thiểu, hạn dùng.' },
@@ -34,7 +34,7 @@ export default function Landing() {
             Website bán hàng <span className="text-amber-300">của riêng bạn</span> – sẵn sàng trong 2 phút
           </h1>
           <p className="mt-4 max-w-2xl text-base text-white/90 sm:text-lg">
-            Chọn mẫu, đặt tên cửa hàng, nhận ngay địa chỉ <b>ten-cua-hang.{ROOT_DOMAIN}</b>. Khách đặt hàng COD, chuyển khoản VietQR hoặc qua
+            Chọn mẫu, đặt tên cửa hàng, nhận ngay địa chỉ <b>{pathStoreLabel('ten-cua-hang')}</b>. Khách đặt hàng COD, chuyển khoản VietQR hoặc qua
             Zalo.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">

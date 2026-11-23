@@ -9,7 +9,7 @@ import { countOrders, getDisabledTemplates, listAllStores, setDisabledTemplates,
 import { firebaseConfigured } from '../../lib/firebase'
 import { applySeo } from '../../lib/seo'
 import type { Store } from '../../lib/types'
-import { pathStoreUrl, subdomainUrl } from '../../lib/urls'
+import { pathStoreLabel, pathStoreUrl } from '../../lib/urls'
 import { getTemplate, TEMPLATES } from '../../templates'
 
 const DOMAIN_LABEL = { none: 'Chưa trỏ', pending: 'Đang chờ gắn', done: 'Đã xong' } as const
@@ -120,7 +120,7 @@ function Dashboard() {
               <span className="text-2xl">{getTemplate(s.template).icon}</span>
               <div className="min-w-0 flex-1">
                 <div className="truncate font-semibold">{s.name}</div>
-                <a href={pathStoreUrl(s.slug)} target="_blank" rel="noreferrer" className="block truncate text-xs text-indigo-700">{subdomainUrl(s.slug).replace('https://', '')}</a>
+                <a href={pathStoreUrl(s.slug)} target="_blank" rel="noreferrer" className="block truncate text-xs text-indigo-700">{pathStoreLabel(s.slug)}</a>
                 <div className="truncate text-xs text-slate-500">
                   {s.ownerEmail} · {s.createdAt ? new Date(s.createdAt).toLocaleDateString('vi-VN') : ''} · hôm nay {todayCounts[s.id] ?? '…'} đơn
                 </div>

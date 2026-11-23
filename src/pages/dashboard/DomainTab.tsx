@@ -5,7 +5,7 @@ import { checkDomain, requiredRecords } from '../../lib/dns'
 import { ROOT_DOMAIN } from '../../lib/env'
 import { normalizeDomain } from '../../lib/slug'
 import type { DomainStatus } from '../../lib/types'
-import { subdomainUrl } from '../../lib/urls'
+import { pathStoreLabel, pathStoreUrl } from '../../lib/urls'
 import { useDash } from './DashContext'
 
 const STATUS: Record<DomainStatus, { label: string; cls: string; desc: string }> = {
@@ -62,7 +62,7 @@ export default function DomainTab() {
   return (
     <div className="space-y-4">
       <div className="card text-sm">
-        Địa chỉ miễn phí của bạn: <a href={subdomainUrl(store.slug)} target="_blank" rel="noreferrer" className="font-semibold text-indigo-700">{store.slug}.{ROOT_DOMAIN}</a> (luôn hoạt động)
+        Địa chỉ miễn phí của bạn: <a href={pathStoreUrl(store.slug)} target="_blank" rel="noreferrer" className="break-all font-semibold text-indigo-700" data-testid="free-address">{pathStoreLabel(store.slug)}</a> (luôn hoạt động)
       </div>
       <form onSubmit={save} className="card space-y-3">
         <h2 className="font-bold">Tên miền riêng</h2>

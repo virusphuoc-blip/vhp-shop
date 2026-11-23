@@ -4,7 +4,7 @@ import { useAuth } from '../../auth/AuthContext'
 import { PlatformShell } from '../../components/PlatformShell'
 import { Alert, Spinner } from '../../components/ui'
 import { listMyStores } from '../../lib/db'
-import { subdomainUrl } from '../../lib/urls'
+import { pathStoreLabel } from '../../lib/urls'
 import type { Store } from '../../lib/types'
 import { getTemplate } from '../../templates'
 
@@ -32,7 +32,7 @@ export default function MyStores() {
               <span className="text-3xl">{getTemplate(s.template).icon}</span>
               <div className="min-w-0 flex-1">
                 <div className="truncate font-bold">{s.name}</div>
-                <div className="truncate text-sm text-slate-500">{subdomainUrl(s.slug).replace('https://', '')}</div>
+                <div className="truncate text-sm text-slate-500">{pathStoreLabel(s.slug)}</div>
                 {!s.active && <span className="text-xs font-semibold text-rose-600">Đang bị tạm khoá</span>}
               </div>
               <Link to={`/quan-ly/${s.id}`} className="btn-primary">Quản lý</Link>

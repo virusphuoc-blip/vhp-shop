@@ -8,3 +8,7 @@ export function subdomainUrl(slug: string): string {
 export function pathStoreUrl(slug: string): string {
   return `${window.location.origin}/s/${slug}`
 }
+
+export function pathStoreLabel(slug: string): string {
+  return pathStoreUrl(slug).replace(/^https?:\/\//, '')
+}
