@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Alert } from '../../components/ui'
 import { setCustomDomain, setDomainStatus } from '../../lib/db'
 import { checkDomain, requiredRecords } from '../../lib/dns'
-import { ROOT_DOMAIN } from '../../lib/env'
+import { PLATFORM_ADMIN_EMAIL, ROOT_DOMAIN } from '../../lib/env'
 import { normalizeDomain } from '../../lib/slug'
 import type { DomainStatus } from '../../lib/types'
 import { pathStoreLabel, pathStoreUrl } from '../../lib/urls'
@@ -63,6 +63,10 @@ export default function DomainTab() {
     <div className="space-y-4">
       <div className="card text-sm">
         Địa chỉ miễn phí của bạn: <a href={pathStoreUrl(store.slug)} target="_blank" rel="noreferrer" className="break-all font-semibold text-indigo-700" data-testid="free-address">{pathStoreLabel(store.slug)}</a> (luôn hoạt động)
+      </div>
+      <div className="card text-sm text-slate-600" data-testid="subdomain-contact">
+        Muốn dùng địa chỉ dạng ten-shop.{ROOT_DOMAIN}? Liên hệ quản trị viên để được cấp subdomain:{' '}
+        <a href={`mailto:${PLATFORM_ADMIN_EMAIL}`} className="break-all font-semibold text-indigo-700">{PLATFORM_ADMIN_EMAIL}</a>
       </div>
       <form onSubmit={save} className="card space-y-3">
         <h2 className="font-bold">Tên miền riêng</h2>
