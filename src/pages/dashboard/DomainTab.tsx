@@ -2,11 +2,14 @@ import { useState, type FormEvent } from 'react'
 import { Alert } from '../../components/ui'
 import { setCustomDomain, setDomainStatus } from '../../lib/db'
 import { checkDomain, requiredRecords } from '../../lib/dns'
-import { PLATFORM_ADMIN_EMAIL, ROOT_DOMAIN } from '../../lib/env'
+import { ROOT_DOMAIN } from '../../lib/env'
 import { normalizeDomain } from '../../lib/slug'
 import type { DomainStatus } from '../../lib/types'
 import { pathStoreLabel, pathStoreUrl } from '../../lib/urls'
+import { zaloLink } from '../../lib/zalo'
 import { useDash } from './DashContext'
+
+const ADMIN_ZALO = '0988474228'
 
 const STATUS: Record<DomainStatus, { label: string; cls: string; desc: string }> = {
   none: { label: 'Chưa trỏ', cls: 'bg-slate-200 text-slate-700', desc: 'Chưa thấy bản ghi DNS đúng. Hãy thêm bản ghi bên dưới tại nơi bạn mua tên miền.' },
@@ -65,8 +68,8 @@ export default function DomainTab() {
         Địa chỉ miễn phí của bạn: <a href={pathStoreUrl(store.slug)} target="_blank" rel="noreferrer" className="break-all font-semibold text-indigo-700" data-testid="free-address">{pathStoreLabel(store.slug)}</a> (luôn hoạt động)
       </div>
       <div className="card text-sm text-slate-600" data-testid="subdomain-contact">
-        Muốn dùng địa chỉ dạng ten-shop.{ROOT_DOMAIN}? Liên hệ quản trị viên để được cấp subdomain:{' '}
-        <a href={`mailto:${PLATFORM_ADMIN_EMAIL}`} className="break-all font-semibold text-indigo-700">{PLATFORM_ADMIN_EMAIL}</a>
+        Muốn dùng địa chỉ dạng ten-shop.{ROOT_DOMAIN}? Liên hệ quản trị viên qua Zalo để được cấp subdomain:{' '}
+        <a href={zaloLink(ADMIN_ZALO)} target="_blank" rel="noreferrer" className="font-semibold text-indigo-700">Zalo {ADMIN_ZALO}</a>
       </div>
       <form onSubmit={save} className="card space-y-3">
         <h2 className="font-bold">Tên miền riêng</h2>
