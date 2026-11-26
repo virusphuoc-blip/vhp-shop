@@ -456,8 +456,19 @@ export async function setFreeMode(on: boolean): Promise<void> {
 
 export async function getPaymentConfig(): Promise<PaymentConfig | null> {
   const snap = await getDoc(doc(getDb(), 'platformConfig', 'payment'))
-  if (!snap.exists()) return null
-  const d = snap.data()
+  return snap.exists() ? toPaymentConfig(snap.data()) : null
+}
+
+/** Theo dõi cài đặt nhận tiền để QR/giá đổi ngay khi admin sửa. */
+export function watchPaymentConfig(cb: (c: PaymentConfig | null) => void, onError: (e: Error) => void): () => void {
+  return onSnapshot(
+    doc(getDb(), 'platformConfig', 'payment'),
+    (snap) => cb(snap.exists() ? toPaymentConfig(snap.data()) : null),
+    onError,
+  )
+}
+
+function toPaymentConfig(d: DocumentData): PaymentConfig {
   const prices: PaymentConfig['prices'] = {}
   for (const { term } of VIP_TERMS) if (typeof d.prices?.[term] === 'number') prices[term] = d.prices[term]
   return { bank: { bin: d.bank?.bin || '', accountNo: d.bank?.accountNo || '', accountName: d.bank?.accountName || '' }, prices }

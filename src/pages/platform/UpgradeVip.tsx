@@ -6,7 +6,7 @@ import { PlatformShell } from '../../components/PlatformShell'
 import { AdminZaloLink, PlanBadge } from '../../components/PlanBits'
 import { Alert, Spinner } from '../../components/ui'
 import { bankByBin } from '../../lib/banks'
-import { cancelVipOrder, createVipOrder, getPaymentConfig, submitVipProof, watchMyVipOrders } from '../../lib/db'
+import { cancelVipOrder, createVipOrder, submitVipProof, watchPaymentConfig, watchMyVipOrders } from '../../lib/db'
 import { compressImage, isImageUrl } from '../../lib/image'
 import { formatVND } from '../../lib/money'
 import { effectivePlan, paymentReady, termPrice, VIP_ORDER_STATUS_LABEL, VIP_TERMS } from '../../lib/plans'
@@ -134,9 +134,7 @@ export default function UpgradeVip() {
   const [busy, setBusy] = useState<VipTerm | ''>('')
   const [now] = useState(() => Date.now())
   useEffect(() => applySeo({ title: 'Nâng cấp VIP – VHP Shop', description: 'Nâng cấp tài khoản VHP Shop lên VIP bằng chuyển khoản VietQR.' }), [])
-  useEffect(() => {
-    getPaymentConfig().then(setCfg, () => setCfg(null))
-  }, [])
+  useEffect(() => watchPaymentConfig(setCfg, () => setCfg(null)), [])
   useEffect(() => {
     if (!user) return
     return watchMyVipOrders(user.uid, setOrders, (e) => setErr(e.message))
