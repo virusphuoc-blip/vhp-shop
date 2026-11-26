@@ -141,6 +141,7 @@ export function VipOrdersAdmin({ onChanged }: { onChanged: () => void }) {
         {FILTERS.map((f) => (
           <button key={f.id} type="button" className={`${filter === f.id ? 'btn-primary' : 'btn-ghost'} px-2.5 py-1 text-xs`} onClick={() => setFilter(f.id)}>{f.label}</button>
         ))}
+        <button type="button" className="btn-ghost px-2.5 py-1 text-xs" onClick={() => void reload()} data-testid="vip-orders-reload">↻ Tải lại</button>
       </div>
       {err && <div className="mt-2"><Alert>{err}</Alert></div>}
       {!orders && !err ? (
