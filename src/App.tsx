@@ -14,6 +14,7 @@ const CreateStore = lazy(() => import('./pages/platform/CreateStore'))
 const MyStores = lazy(() => import('./pages/platform/MyStores'))
 const StoreDashboard = lazy(() => import('./pages/dashboard/StoreDashboard'))
 const PlatformAdmin = lazy(() => import('./pages/admin/PlatformAdmin'))
+const UpgradeVip = lazy(() => import('./pages/platform/UpgradeVip'))
 
 const hostMode = resolveHost(window.location.hostname, { rootDomain: ROOT_DOMAIN, appHosts: APP_HOSTS })
 
@@ -28,6 +29,7 @@ function PlatformRoutes() {
         <Route path="/tao-cua-hang" element={<RequireAuth><CreateStore /></RequireAuth>} />
         <Route path="/quan-ly" element={<RequireAuth><MyStores /></RequireAuth>} />
         <Route path="/quan-ly/:storeId/*" element={<RequireAuth><StoreDashboard /></RequireAuth>} />
+        <Route path="/nang-cap-vip" element={<RequireAuth><UpgradeVip /></RequireAuth>} />
         <Route path="/quan-tri/*" element={<PlatformAdmin />} />
         <Route path="/mau/:templateId/*" element={<DemoStore />} />
         <Route path="/s/:slug/*" element={<SlugStore />} />

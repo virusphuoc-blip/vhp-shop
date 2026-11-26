@@ -7,13 +7,14 @@ import { PlatformShell } from '../../components/PlatformShell'
 import { Alert, Spinner } from '../../components/ui'
 import { countOrders, getDisabledTemplates, listAllStores, listUserAccounts, savePlansConfig, setDisabledTemplates, setFreeMode, setStoreActive, setUserPlan } from '../../lib/db'
 import { PlanBadge } from '../../components/PlanBits'
-import { effectivePlan, formatLimit } from '../../lib/plans'
+import { addMonths, effectivePlan, formatLimit } from '../../lib/plans'
 import { usePlatformConfig } from '../../lib/usePlatformConfig'
 import { firebaseConfigured } from '../../lib/firebase'
 import { applySeo } from '../../lib/seo'
 import type { Plan, PlanLimits, PlansConfig, Store, UserAccount } from '../../lib/types'
 import { pathStoreLabel, pathStoreUrl } from '../../lib/urls'
 import { getTemplate, TEMPLATES } from '../../templates'
+import { PaymentSettings, VipOrdersAdmin } from './VipPayments'
 
 const DOMAIN_LABEL = { none: 'Chưa trỏ', pending: 'Đang chờ gắn', done: 'Đã xong' } as const
 
@@ -129,12 +130,6 @@ interface AccountRow {
   createdAt?: number
 }
 
-function addMonths(base: number, months: number): Date {
-  const d = new Date(base)
-  d.setMonth(d.getMonth() + months)
-  return d
-}
-
 function Accounts({ stores }: { stores: Store[] }) {
   const [accounts, setAccounts] = useState<UserAccount[] | null>(null)
   const [err, setErr] = useState('')
@@ -237,6 +232,7 @@ function Dashboard() {
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'domain'>('all')
+  const [accountsKey, setAccountsKey] = useState(0)
 
   useEffect(() => {
     listAllStores().then(
@@ -295,7 +291,11 @@ function Dashboard() {
 
       <PlanSettings />
 
-      <Accounts stores={stores} />
+      <PaymentSettings />
+
+      <VipOrdersAdmin onChanged={() => setAccountsKey((k) => k + 1)} />
+
+      <Accounts key={accountsKey} stores={stores} />
 
       {pendingDomains.length > 0 && (
         <div className="card">

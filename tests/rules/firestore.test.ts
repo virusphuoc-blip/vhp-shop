@@ -306,3 +306,71 @@ describe('gói Thường / VIP', () => {
     await assertSucceeds(createStoreAs('eve', 'sE', 'shop-eve'))
   })
 })
+
+describe('nâng VIP qua chuyển khoản', () => {
+  const bank = { bin: '970436', accountNo: '0123456789', accountName: 'VH PHUOC' }
+  const pay = { bank, prices: { m1: 50000, m12: 500000 } }
+  const ID = 'VHPALICABC234'
+  const alice = () => env.authenticatedContext('alice', { email: 'alice@test.vn' }).firestore()
+  const admin = () => env.authenticatedContext('admin', ADMIN).firestore()
+  const vipOrder = (extra: Record<string, unknown> = {}) => ({
+    uid: 'alice', email: 'alice@test.vn', term: 'm1', months: 1, amount: 50000, bank, status: 'pending', proof: '',
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...extra,
+  })
+  async function seed(path: string, data: Record<string, unknown>) {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), path), data)
+    })
+  }
+
+  it('chỉ admin sửa cài đặt nhận tiền, giá phải hợp lệ', async () => {
+    await assertFails(setDoc(doc(alice(), 'platformConfig/payment'), pay))
+    await assertFails(setDoc(doc(admin(), 'platformConfig/payment'), { bank, prices: { m1: -1 } }))
+    await assertFails(setDoc(doc(admin(), 'platformConfig/payment'), { bank: { ...bank, bin: 'abc' }, prices: {} }))
+    await assertSucceeds(setDoc(doc(admin(), 'platformConfig/payment'), { ...pay, updatedAt: serverTimestamp() }))
+    await assertSucceeds(getDoc(doc(alice(), 'platformConfig/payment')))
+  })
+
+  it('khách tạo đơn đúng giá + tài khoản nhận; mốc chưa có giá thì không mua được', async () => {
+    await assertFails(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder()))
+    await seed('platformConfig/payment', pay)
+    await assertFails(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder({ amount: 1000 })))
+    await assertFails(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder({ term: 'm3', months: 3, amount: 150000 })))
+    await assertFails(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder({ months: 12 })))
+    await assertFails(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder({ bank: { ...bank, accountNo: '999' } })))
+    await assertFails(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder({ uid: 'bob' })))
+    await assertFails(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder({ status: 'approved' })))
+    await assertSucceeds(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder()))
+    await assertFails(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder()))
+    await assertSucceeds(getDocs(query(collection(alice(), 'vipOrders'), where('uid', '==', 'alice'))))
+    const bob = env.authenticatedContext('bob', { email: 'bob@test.vn' }).firestore()
+    await assertFails(getDoc(doc(bob, `vipOrders/${ID}`)))
+  })
+
+  it('khách gửi bằng chứng, không tự duyệt; admin duyệt phải kích hoạt VIP cùng lần ghi', async () => {
+    await seed('platformConfig/payment', pay)
+    await assertSucceeds(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder()))
+    await assertFails(updateDoc(doc(alice(), `vipOrders/${ID}`), { status: 'submitted', proof: '', submittedAt: serverTimestamp() }))
+    await assertSucceeds(updateDoc(doc(alice(), `vipOrders/${ID}`), { status: 'submitted', proof: 'https://i.imgur.com/x.png', submittedAt: serverTimestamp() }))
+    await assertFails(updateDoc(doc(alice(), `vipOrders/${ID}`), { status: 'approved', decidedAt: serverTimestamp() }))
+    await assertFails(updateDoc(doc(alice(), `vipOrders/${ID}`), { amount: 1 }))
+
+    const exp = new Date(Date.now() + 30 * 86400000)
+    await assertFails(updateDoc(doc(admin(), `vipOrders/${ID}`), { status: 'approved', decidedAt: serverTimestamp(), vipExpiresAt: exp }))
+    const adb = admin()
+    const b = writeBatch(adb)
+    b.set(doc(adb, 'users/alice'), { email: 'alice@test.vn', plan: 'vip', vipExpiresAt: exp, createdAt: new Date() })
+    b.update(doc(adb, `vipOrders/${ID}`), { status: 'approved', decidedAt: serverTimestamp(), vipExpiresAt: exp })
+    await assertSucceeds(b.commit())
+    await assertFails(updateDoc(doc(admin(), `vipOrders/${ID}`), { status: 'rejected', decidedAt: serverTimestamp() }))
+    await assertFails(updateDoc(doc(alice(), `vipOrders/${ID}`), { status: 'cancelled' }))
+  })
+
+  it('khách huỷ đơn; admin từ chối đơn', async () => {
+    await seed('platformConfig/payment', pay)
+    await assertSucceeds(setDoc(doc(alice(), `vipOrders/${ID}`), vipOrder()))
+    await assertSucceeds(updateDoc(doc(alice(), `vipOrders/${ID}`), { status: 'cancelled' }))
+    await assertSucceeds(setDoc(doc(alice(), 'vipOrders/VHPALICXYZ789'), vipOrder()))
+    await assertSucceeds(updateDoc(doc(admin(), 'vipOrders/VHPALICXYZ789'), { status: 'rejected', rejectReason: 'Chưa nhận được tiền', decidedAt: serverTimestamp() }))
+  })
+})

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Alert } from '../../components/ui'
 import { changeStoreTemplate, defaultTheme, updateStore } from '../../lib/db'
 import { useAuth } from '../../auth/AuthContext'
-import { AdminZaloLink } from '../../components/PlanBits'
+import { AdminZaloLink, UpgradeVipLink } from '../../components/PlanBits'
 import { canChangeTemplate, effectivePlan, limitsFor } from '../../lib/plans'
 import { usePlatformConfig } from '../../lib/usePlatformConfig'
 import type { TemplateId } from '../../lib/types'
@@ -93,7 +93,7 @@ function TemplateSwitcher({ onChanged }: { onChanged: (theme: StoreTheme) => voi
       </div>
       {!allowed && (
         <p className="mt-3 rounded-lg bg-amber-50 p-2 text-sm text-amber-900" data-testid="template-locked">
-          🔒 Gói Thường dùng 1 giao diện. Đổi giao diện cần VIP — liên hệ quản trị qua <AdminZaloLink />.
+          🔒 Gói Thường dùng 1 giao diện. Đổi giao diện cần VIP — liên hệ quản trị qua <AdminZaloLink /> hoặc <UpgradeVipLink />.
         </p>
       )}
       {err && <div className="mt-3"><Alert>{err}</Alert></div>}

@@ -170,3 +170,34 @@ export interface PlatformSettings {
   freeMode: boolean
   freeClosedAt?: number
 }
+
+/** Mốc thời hạn VIP bán qua chuyển khoản. */
+export type VipTerm = 'm1' | 'm3' | 'm6' | 'm12'
+
+export interface PaymentConfig {
+  bank: BankInfo
+  /** Giá (đồng) từng mốc; thiếu hoặc 0 = chưa mở bán. */
+  prices: Partial<Record<VipTerm, number>>
+}
+
+export type VipOrderStatus = 'pending' | 'submitted' | 'approved' | 'rejected' | 'cancelled'
+
+export interface VipOrder {
+  /** Cũng là nội dung chuyển khoản. */
+  id: string
+  uid: string
+  email: string
+  term: VipTerm
+  months: number
+  amount: number
+  /** Tài khoản nhận tiền tại thời điểm tạo đơn. */
+  bank: BankInfo
+  status: VipOrderStatus
+  /** Link ảnh hoặc ảnh base64 nhỏ khách gửi làm bằng chứng. */
+  proof: string
+  createdAt?: number
+  submittedAt?: number
+  decidedAt?: number
+  vipExpiresAt?: number
+  rejectReason?: string
+}

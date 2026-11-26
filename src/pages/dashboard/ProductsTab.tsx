@@ -6,6 +6,7 @@ import { formatVND } from '../../lib/money'
 import type { Product } from '../../lib/types'
 import { getTemplate } from '../../templates'
 import { useAuth } from '../../auth/AuthContext'
+import { UpgradeVipLink } from '../../components/PlanBits'
 import { canAddProduct, effectivePlan, formatLimit, limitsFor, PLAN_LABEL, productLimitMessage } from '../../lib/plans'
 import { usePlatformConfig } from '../../lib/usePlatformConfig'
 import { useDash } from './DashContext'
@@ -271,6 +272,7 @@ export default function ProductsTab() {
         Gói {PLAN_LABEL[plan]}: {count} sản phẩm{limits ? ` / ${formatLimit(limits.maxProducts, 'sản phẩm')}` : ''}
       </p>
       {err && <div className="mt-3"><Alert>{err}</Alert></div>}
+      {plan === 'free' && full && <p className="mt-2 text-sm"><UpgradeVipLink /></p>}
       <ul className="mt-4 space-y-2">
         {list.map((p) => (
           <li key={p.id} className="card flex items-center gap-3 p-3" data-testid="dash-product">

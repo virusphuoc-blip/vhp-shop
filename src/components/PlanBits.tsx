@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { PLATFORM_ADMIN_ZALO } from '../lib/env'
 import { formatLimit, PLAN_LABEL } from '../lib/plans'
 import type { Plan, PlansConfig } from '../lib/types'
@@ -8,6 +9,14 @@ export function AdminZaloLink({ className = 'font-semibold underline' }: { class
     <a href={zaloLink(PLATFORM_ADMIN_ZALO)} target="_blank" rel="noreferrer" className={className}>
       Zalo {PLATFORM_ADMIN_ZALO}
     </a>
+  )
+}
+
+export function UpgradeVipLink({ className = 'font-semibold text-indigo-700 underline' }: { className?: string }) {
+  return (
+    <Link to="/nang-cap-vip" className={className} data-testid="upgrade-vip-link">
+      👑 Nâng cấp VIP bằng chuyển khoản
+    </Link>
   )
 }
 
@@ -63,7 +72,7 @@ export function PlanComparison({ plans }: { plans: PlansConfig | null }) {
         </tbody>
       </table>
       <p className="border-t border-slate-100 px-3 py-2 text-xs text-slate-600">
-        Nâng VIP: liên hệ quản trị qua <AdminZaloLink className="font-semibold text-indigo-700" />
+        Nâng VIP: liên hệ quản trị qua <AdminZaloLink className="font-semibold text-indigo-700" /> hoặc <UpgradeVipLink className="font-semibold text-indigo-700" />
       </p>
     </div>
   )

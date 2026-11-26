@@ -75,7 +75,37 @@ service cloud.firestore {
         || (docId == 'settings'
           && request.resource.data.keys().hasOnly(['freeMode', 'freeClosedAt', 'updatedAt'])
           && request.resource.data.freeMode is bool
-          && (request.resource.data.freeClosedAt == null || request.resource.data.freeClosedAt is timestamp)));
+          && (request.resource.data.freeClosedAt == null || request.resource.data.freeClosedAt is timestamp))
+        || (docId == 'payment'
+          && request.resource.data.keys().hasOnly(['bank', 'prices', 'updatedAt'])
+          && validPayBank(request.resource.data.bank)
+          && validPrices(request.resource.data.prices)));
+    }
+
+    // ---------- Nâng cấp VIP qua chuyển khoản ----------
+    // platformConfig/payment: tài khoản nhận tiền + giá từng mốc (m1/m3/m6/m12); thiếu giá = chưa mở bán.
+    function validPayBank(m) {
+      return m is map && m.keys().hasOnly(['bin', 'accountNo', 'accountName'])
+        && m.bin is string && m.bin.matches('^[0-9]{6}$')
+        && str(m.accountNo, 1, 30)
+        && str(m.accountName, 1, 80);
+    }
+
+    function validPrice(m, k) {
+      return !(k in m) || (m[k] is int && m[k] >= 1000 && m[k] <= 1000000000);
+    }
+
+    function validPrices(m) {
+      return m is map && m.keys().hasOnly(['m1', 'm3', 'm6', 'm12'])
+        && validPrice(m, 'm1') && validPrice(m, 'm3') && validPrice(m, 'm6') && validPrice(m, 'm12');
+    }
+
+    function payCfg() {
+      return get(cfgPath('payment')).data;
+    }
+
+    function termMonths() {
+      return { 'm1': 1, 'm3': 3, 'm6': 6, 'm12': 12 };
     }
 
     function isVip(uid) {
@@ -135,6 +165,48 @@ service cloud.firestore {
         && (request.resource.data.vipExpiresAt == null || request.resource.data.vipExpiresAt is timestamp)
         && request.resource.data.createdAt is timestamp;
       allow delete: if isPlatformAdmin();
+    }
+
+    // Đơn nâng VIP (id = nội dung chuyển khoản). Khách tạo đơn đúng giá + tài khoản nhận đang cài đặt,
+    // gửi bằng chứng hoặc huỷ. Chỉ admin xác nhận; xác nhận phải kích hoạt VIP đúng hạn trong cùng lần ghi.
+    match /vipOrders/{orderId} {
+      allow get, list: if (signedIn() && resource.data.uid == request.auth.uid) || isPlatformAdmin();
+
+      allow create: if signedIn()
+        && orderId.matches('^VHP[A-Z0-9]{10}$')
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'term', 'months', 'amount', 'bank', 'status', 'proof', 'createdAt', 'updatedAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.term in ['m1', 'm3', 'm6', 'm12']
+        && request.resource.data.months == termMonths()[request.resource.data.term]
+        && exists(cfgPath('payment'))
+        && request.resource.data.term in payCfg().prices
+        && request.resource.data.amount == payCfg().prices[request.resource.data.term]
+        && request.resource.data.bank == payCfg().bank
+        && request.resource.data.status == 'pending'
+        && request.resource.data.proof == ''
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if (signedIn() && resource.data.uid == request.auth.uid
+          && resource.data.status in ['pending', 'submitted']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'proof', 'submittedAt', 'updatedAt'])
+          && ((request.resource.data.status == 'submitted'
+              && str(request.resource.data.proof, 1, 300000)
+              && request.resource.data.submittedAt == request.time)
+            || (request.resource.data.status == 'cancelled'
+              && request.resource.data.proof == resource.data.proof)))
+        || (isPlatformAdmin()
+          && resource.data.status in ['pending', 'submitted']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'vipExpiresAt', 'rejectReason', 'updatedAt'])
+          && request.resource.data.decidedAt == request.time
+          && ((request.resource.data.status == 'rejected' && str(request.resource.data.get('rejectReason', ''), 0, 300))
+            || (request.resource.data.status == 'approved'
+              && request.resource.data.vipExpiresAt is timestamp
+              && request.resource.data.vipExpiresAt > request.time
+              && getAfter(userPath(resource.data.uid)).data.plan == 'vip'
+              && getAfter(userPath(resource.data.uid)).data.vipExpiresAt == request.resource.data.vipExpiresAt)));
+
+      allow delete: if false;
     }
 
     // ---------- Tên miền phụ (đảm bảo không trùng) ----------

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import { PlatformShell } from '../../components/PlatformShell'
+import { UpgradeVipLink } from '../../components/PlanBits'
 import { Alert, Spinner } from '../../components/ui'
 import { listMyStores } from '../../lib/db'
 import { pathStoreLabel } from '../../lib/urls'
@@ -26,6 +27,7 @@ export default function MyStores() {
           <h1 className="text-2xl font-extrabold">Cửa hàng của tôi</h1>
           <Link to="/tao-cua-hang" className="btn-primary">+ Tạo thêm</Link>
         </div>
+        <p className="mt-2 text-sm"><UpgradeVipLink /></p>
         <ul className="mt-5 space-y-3">
           {stores.map((s) => (
             <li key={s.id} className="card flex items-center gap-3">

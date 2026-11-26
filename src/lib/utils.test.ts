@@ -145,3 +145,28 @@ describe('plans', async () => {
     expect(canCreateStore(closed, acc('vip', now + 1, now + 1), now)).toBe(true)
   })
 })
+
+describe('nâng VIP qua chuyển khoản', async () => {
+  const { makeVipOrderCode, nextVipExpiry, termPrice, paymentReady } = await import('./plans')
+  it('mã đơn = VHP + 4 ký tự tài khoản + 6 ký tự ngẫu nhiên', () => {
+    const code = makeVipOrderCode('rlyhXeX0g4Qx', () => 0)
+    expect(code).toBe('VHPRLYHAAAAAA')
+    expect(makeVipOrderCode('ab')).toMatch(/^VHPABXX[A-Z0-9]{6}$/)
+  })
+  it('hạn VIP cộng dồn khi còn hạn, tính từ bây giờ khi đã hết', () => {
+    const now = new Date('2026-11-27T00:00:00').getTime()
+    const exp = new Date('2026-12-10T00:00:00').getTime()
+    expect(nextVipExpiry({ uid: 'u', email: '', plan: 'vip', vipExpiresAt: exp }, 1, now).getMonth()).toBe(0)
+    expect(nextVipExpiry({ uid: 'u', email: '', plan: 'vip', vipExpiresAt: now - 1 }, 3, now).toISOString()).toBe(new Date('2027-02-27T00:00:00').toISOString())
+    expect(nextVipExpiry(null, 12, now).getFullYear()).toBe(2027)
+  })
+  it('mốc chưa có giá thì chưa bán; thiếu tài khoản nhận thì chưa sẵn sàng', () => {
+    const cfg = { bank: { bin: '970436', accountNo: '0123', accountName: 'A' }, prices: { m1: 50000, m3: 0 } }
+    expect(termPrice(cfg, 'm1')).toBe(50000)
+    expect(termPrice(cfg, 'm3')).toBeNull()
+    expect(termPrice(cfg, 'm12')).toBeNull()
+    expect(paymentReady(cfg)).toBe(true)
+    expect(paymentReady({ ...cfg, bank: { bin: '', accountNo: '', accountName: '' } })).toBe(false)
+    expect(paymentReady(null)).toBe(false)
+  })
+})

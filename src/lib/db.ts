@@ -21,7 +21,8 @@ import type { User } from 'firebase/auth'
 import { getDb } from './firebase'
 import { getTemplate, resolveTemplateId, storedTemplateId } from '../templates'
 import { sampleProducts } from '../templates/samples'
-import type { Coupon, DomainStatus, Order, OrderStatus, Plan, PlansConfig, PlatformSettings, Product, Review, Store, StoreTheme, TemplateId, UserAccount } from './types'
+import type { Coupon, DomainStatus, Order, OrderStatus, PaymentConfig, Plan, PlansConfig, PlatformSettings, Product, Review, Store, StoreTheme, TemplateId, UserAccount, VipOrder, VipOrderStatus, VipTerm } from './types'
+import { makeVipOrderCode, nextVipExpiry, termPrice, VIP_TERMS } from './plans'
 
 function ms(v: unknown): number | undefined {
   return v instanceof Timestamp ? v.toMillis() : undefined
@@ -449,4 +450,117 @@ export async function getPlatformSettings(): Promise<PlatformSettings | null> {
 
 export async function setFreeMode(on: boolean): Promise<void> {
   await setDoc(doc(getDb(), 'platformConfig', 'settings'), { freeMode: on, freeClosedAt: on ? null : serverTimestamp(), updatedAt: serverTimestamp() })
+}
+
+// ---------------- Nâng cấp VIP qua chuyển khoản ----------------
+
+export async function getPaymentConfig(): Promise<PaymentConfig | null> {
+  const snap = await getDoc(doc(getDb(), 'platformConfig', 'payment'))
+  if (!snap.exists()) return null
+  const d = snap.data()
+  const prices: PaymentConfig['prices'] = {}
+  for (const { term } of VIP_TERMS) if (typeof d.prices?.[term] === 'number') prices[term] = d.prices[term]
+  return { bank: { bin: d.bank?.bin || '', accountNo: d.bank?.accountNo || '', accountName: d.bank?.accountName || '' }, prices }
+}
+
+export async function savePaymentConfig(c: PaymentConfig): Promise<void> {
+  const prices: Record<string, number> = {}
+  for (const { term } of VIP_TERMS) if (c.prices[term]) prices[term] = c.prices[term] as number
+  await setDoc(doc(getDb(), 'platformConfig', 'payment'), { bank: c.bank, prices, updatedAt: serverTimestamp() })
+}
+
+function toVipOrder(id: string, d: DocumentData): VipOrder {
+  return {
+    id,
+    uid: d.uid,
+    email: d.email || '',
+    term: d.term,
+    months: d.months,
+    amount: d.amount,
+    bank: { bin: d.bank?.bin || '', accountNo: d.bank?.accountNo || '', accountName: d.bank?.accountName || '' },
+    status: d.status as VipOrderStatus,
+    proof: d.proof || '',
+    createdAt: ms(d.createdAt),
+    submittedAt: ms(d.submittedAt),
+    decidedAt: ms(d.decidedAt),
+    vipExpiresAt: ms(d.vipExpiresAt),
+    rejectReason: d.rejectReason || '',
+  }
+}
+
+const byNewest = (a: VipOrder, b: VipOrder) => (b.createdAt || 0) - (a.createdAt || 0)
+
+/** Tạo đơn nâng VIP; số tiền và tài khoản nhận lấy từ cài đặt hiện tại (rules kiểm tra khớp). */
+export async function createVipOrder(user: User, cfg: PaymentConfig, term: VipTerm): Promise<string> {
+  const months = VIP_TERMS.find((t) => t.term === term)?.months
+  const amount = termPrice(cfg, term)
+  if (!months || !amount) throw new Error('Mốc thời hạn này chưa mở bán.')
+  for (let attempt = 0; ; attempt++) {
+    const id = makeVipOrderCode(user.uid)
+    try {
+      await setDoc(doc(getDb(), 'vipOrders', id), {
+        uid: user.uid,
+        email: user.email || '',
+        term,
+        months,
+        amount,
+        bank: cfg.bank,
+        status: 'pending',
+        proof: '',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+      return id
+    } catch (e) {
+      if (attempt >= 2) throw e
+    }
+  }
+}
+
+/** Theo dõi đơn nâng VIP của chính mình (cập nhật ngay khi quản trị xác nhận). */
+export function watchMyVipOrders(uid: string, cb: (orders: VipOrder[]) => void, onError: (e: Error) => void): () => void {
+  return onSnapshot(
+    query(collection(getDb(), 'vipOrders'), where('uid', '==', uid)),
+    (snap) => cb(snap.docs.map((d) => toVipOrder(d.id, d.data())).sort(byNewest)),
+    onError,
+  )
+}
+
+export async function submitVipProof(orderId: string, proof: string): Promise<void> {
+  await updateDoc(doc(getDb(), 'vipOrders', orderId), { status: 'submitted', proof, submittedAt: serverTimestamp(), updatedAt: serverTimestamp() })
+}
+
+export async function cancelVipOrder(orderId: string): Promise<void> {
+  await updateDoc(doc(getDb(), 'vipOrders', orderId), { status: 'cancelled', updatedAt: serverTimestamp() })
+}
+
+/** Chỉ admin. */
+export async function listVipOrders(): Promise<VipOrder[]> {
+  const snap = await getDocs(query(collection(getDb(), 'vipOrders'), orderBy('createdAt', 'desc'), limit(300)))
+  return snap.docs.map((d) => toVipOrder(d.id, d.data()))
+}
+
+/** Chỉ admin: xác nhận đã nhận tiền → kích hoạt/gia hạn VIP và chốt đơn trong cùng một lần ghi. */
+export async function approveVipOrder(o: VipOrder): Promise<Date> {
+  const db = getDb()
+  const userRef = doc(db, 'users', o.uid)
+  const snap = await getDoc(userRef)
+  const acc = snap.exists() ? toAccount(o.uid, snap.data()) : null
+  const expires = Timestamp.fromDate(nextVipExpiry(acc, o.months))
+  const b = writeBatch(db)
+  b.set(userRef, {
+    email: acc?.email || o.email,
+    plan: 'vip',
+    vipExpiresAt: expires,
+    createdAt: acc?.createdAt ? Timestamp.fromMillis(acc.createdAt) : serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  b.update(doc(db, 'vipOrders', o.id), { status: 'approved', decidedAt: serverTimestamp(), vipExpiresAt: expires, updatedAt: serverTimestamp() })
+  await b.commit()
+  return expires.toDate()
+}
+
+/** Chỉ admin. */
+export async function rejectVipOrder(orderId: string, reason: string): Promise<void> {
+  await updateDoc(doc(getDb(), 'vipOrders', orderId), { status: 'rejected', rejectReason: reason, decidedAt: serverTimestamp(), updatedAt: serverTimestamp() })
 }
