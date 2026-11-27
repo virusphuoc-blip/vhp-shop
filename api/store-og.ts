@@ -179,7 +179,13 @@ export async function GET(request: Request): Promise<Response> {
   const slug = (url.searchParams.get('slug') || '').toLowerCase()
   if (url.searchParams.get('img') === '1') return serveImage(slug, origin)
 
-  const page = await fetch(`${origin}/index.html`)
+  // Chuyển tiếp cookie/bypass để bản preview có bảo vệ Vercel vẫn đọc được index.html.
+  const fwd: Record<string, string> = {}
+  for (const h of ['cookie', 'x-vercel-protection-bypass']) {
+    const v = request.headers.get(h)
+    if (v) fwd[h] = v
+  }
+  const page = await fetch(`${origin}/index.html`, { headers: fwd })
   let html = await page.text()
   try {
     const res = await loadStore(slug)
