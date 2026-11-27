@@ -20,11 +20,14 @@ interface Loaded {
   api: StoreApi
 }
 
-async function loadLive(lookup: () => Promise<StoreLookup>): Promise<Loaded | 'notfound' | 'paused'> {
+type Closed = { closed: Store }
+
+async function loadLive(lookup: () => Promise<StoreLookup>): Promise<Loaded | Closed | 'notfound' | 'paused'> {
   const db = await import('../lib/db')
   const res = await lookup()
   if (res.status !== 'ok') return res.status
   const store = res.store
+  if (store.status === 'closed') return { closed: store }
   const [products, reviews] = await Promise.all([db.listProducts(store.id), db.listReviews(store.id).catch(() => [] as Review[])])
   const api: StoreApi = {
     getCoupon: (code) => db.getCoupon(store.id, code),
@@ -36,7 +39,7 @@ async function loadLive(lookup: () => Promise<StoreLookup>): Promise<Loaded | 'n
 }
 
 function LiveStore({ lookupKey, lookup, base }: { lookupKey: string; lookup: () => Promise<StoreLookup>; base: string }) {
-  const [state, setState] = useState<{ key: string; data: Loaded | 'notfound' | 'paused' | 'error' } | null>(null)
+  const [state, setState] = useState<{ key: string; data: Loaded | Closed | 'notfound' | 'paused' | 'error' } | null>(null)
   useEffect(() => {
     let cancelled = false
     loadLive(lookup).then(
@@ -53,6 +56,10 @@ function LiveStore({ lookupKey, lookup, base }: { lookupKey: string; lookup: () 
   if (state.data === 'notfound') return <StoreMessage icon="🔎" title="Không tìm thấy cửa hàng" text="Địa chỉ này chưa có cửa hàng nào. Hãy kiểm tra lại đường dẫn." />
   if (state.data === 'paused') return <StoreMessage icon="⏸️" title="Cửa hàng tạm ngưng hoạt động" text="Cửa hàng này đang tạm ngưng. Vui lòng quay lại sau." />
   if (state.data === 'error') return <StoreMessage icon="⚠️" title="Không tải được cửa hàng" text="Vui lòng kiểm tra kết nối mạng và tải lại trang." />
+  if ('closed' in state.data) {
+    const s = state.data.closed
+    return <StoreMessage icon="🔒" title="Cửa hàng tạm đóng" text={`${s.name} đang tạm đóng, chưa nhận đơn hàng.${s.closedReason ? ` Lý do: ${s.closedReason}` : ''} Vui lòng quay lại sau.`} />
+  }
   const d = state.data
   return (
     <Suspense fallback={<Spinner full />}>
@@ -93,6 +100,10 @@ function demoStore(t: TemplateId): Store {
     customDomain: '',
     domainStatus: 'none',
     active: true,
+    status: 'open',
+    closedReason: '',
+    closedBy: '',
+    mapLocation: '10.7769,106.7009',
   }
 }
 
@@ -109,7 +120,7 @@ export function DemoStore() {
     ]
     const api: StoreApi = {
       getCoupon: async (code) =>
-        code.trim().toUpperCase() === 'GIAM10' ? { code: 'GIAM10', type: 'percent', value: 10, minOrder: 0, expiresAt: '', active: true } : null,
+        code.trim().toUpperCase() === 'GIAM10' ? { code: 'GIAM10', type: 'percent', value: 10, minOrder: 0, expiresAt: '', active: true, maxUses: 0, usedCount: 0 } : null,
       placeOrder: async () => `MAU${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
       addReview: async (r) => ({ ...r, id: `r${Math.random().toString(36).slice(2)}`, createdAt: new Date().getTime() }),
       getMedia: async () => [],

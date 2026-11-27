@@ -35,6 +35,7 @@ export default function MyStores() {
               <div className="min-w-0 flex-1">
                 <div className="truncate font-bold">{s.name}</div>
                 <div className="truncate text-sm text-slate-500">{pathStoreLabel(s.slug)}</div>
+                {s.status === 'closed' && <span className="mr-2 text-xs font-semibold text-amber-600">Đang tạm đóng</span>}
                 {!s.active && <span className="text-xs font-semibold text-rose-600">Đang bị tạm khoá</span>}
               </div>
               <Link to={`/quan-ly/${s.id}`} className="btn-primary">Quản lý</Link>

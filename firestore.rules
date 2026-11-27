@@ -30,8 +30,13 @@ service cloud.firestore {
       return get(storePath(storeId)).data.active == true;
     }
 
+    // Cửa hàng tạm đóng (status 'closed'): khách không xem sản phẩm, không đặt hàng.
+    function storeOpen(storeId) {
+      return get(storePath(storeId)).data.get('status', 'open') != 'closed';
+    }
+
     function canReadStoreContent(storeId) {
-      return storeActive(storeId) || isOwner(storeId) || isPlatformAdmin();
+      return (storeActive(storeId) && storeOpen(storeId)) || isOwner(storeId) || isPlatformAdmin();
     }
 
     function str(v, min, max) {
@@ -241,7 +246,20 @@ service cloud.firestore {
     function storeKeys() {
       return ['ownerUid', 'ownerEmail', 'name', 'slug', 'template', 'phone', 'zalo', 'address', 'description',
         'openHours', 'shippingFee', 'freeShipFrom', 'theme', 'bank', 'customDomain', 'domainStatus', 'active',
-        'productCount', 'lastProductId', 'createdAt', 'updatedAt'];
+        'productCount', 'lastProductId', 'createdAt', 'updatedAt',
+        'status', 'closedReason', 'closedAt', 'closedBy', 'mapLocation'];
+    }
+
+    function statusKeys() {
+      return ['status', 'closedReason', 'closedAt', 'closedBy'];
+    }
+
+    // Đóng: ghi đúng người đóng + thời điểm; mở: xoá lý do/người đóng.
+    function validStatusChange() {
+      let d = request.resource.data;
+      return !d.diff(resource.data).affectedKeys().hasAny(statusKeys())
+        || (d.status == 'closed' && d.closedBy == request.auth.uid && d.closedAt == request.time)
+        || (d.status == 'open' && d.closedReason == '' && d.closedBy == '' && d.closedAt == null);
     }
 
     function validStoreFields(d) {
@@ -260,7 +278,15 @@ service cloud.firestore {
         && str(d.customDomain, 0, 253)
         && d.domainStatus in ['none', 'pending', 'done']
         && (!('productCount' in d) || (d.productCount is int && d.productCount >= 0))
-        && (!('lastProductId' in d) || str(d.lastProductId, 0, 64));
+        && (!('lastProductId' in d) || str(d.lastProductId, 0, 64))
+        && d.get('status', 'open') in ['open', 'closed']
+        && str(d.get('closedReason', ''), 0, 200)
+        && str(d.get('closedBy', ''), 0, 128)
+        && (d.get('closedAt', null) == null || d.closedAt is timestamp)
+        && str(d.get('mapLocation', ''), 0, 500)
+        && (d.get('mapLocation', '') == ''
+          || d.mapLocation.matches('^https://[^ ]+$')
+          || d.mapLocation.matches('^ *-?[0-9]{1,2}([.][0-9]+)? *, *-?[0-9]{1,3}([.][0-9]+)? *$'));
     }
 
     function productPath(storeId, productId) {
@@ -305,20 +331,29 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && request.resource.data.get('productCount', 0) == 0
         && request.resource.data.get('lastProductId', '') == ''
+        && request.resource.data.get('status', 'open') == 'open'
+        && request.resource.data.get('closedBy', '') == ''
         && validStoreFields(request.resource.data)
         && canCreateStore(request.auth.uid)
         && getAfter(/databases/$(database)/documents/slugs/$(request.resource.data.slug)).data.storeId == storeId;
 
       // Chủ shop sửa thông tin; không được đổi chủ, tên miền phụ, trạng thái bật/tắt (do nền tảng quản lý).
+      // Chủ shop tự đóng/mở cửa hàng; cửa hàng do admin đóng thì chỉ admin mở lại.
       // Đổi mẫu giao diện chỉ khi gói cho phép.
       allow update: if (signedIn() && resource.data.ownerUid == request.auth.uid
           && !request.resource.data.diff(resource.data).affectedKeys()
                .hasAny(['ownerUid', 'ownerEmail', 'slug', 'active', 'createdAt'])
           && validStoreFields(request.resource.data)
+          && validStatusChange()
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(statusKeys())
+            || resource.data.get('closedBy', '') in ['', request.auth.uid])
           && productCountValid(storeId)
           && (templateUnchanged() || canChangeTemplate(request.auth.uid)))
         || (isPlatformAdmin()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'updatedAt']));
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['active', 'updatedAt', 'status', 'closedReason', 'closedAt', 'closedBy'])
+          && validStoreFields(request.resource.data)
+          && validStatusChange());
 
       allow delete: if isPlatformAdmin();
 
@@ -387,8 +422,41 @@ service cloud.firestore {
           && d.createdAt == request.time;
       }
 
+      function couponPath(storeId, code) {
+        return /databases/$(database)/documents/stores/$(storeId)/coupons/$(code);
+      }
+
+      // Hạn dùng 'YYYY-MM-DD' tính hết ngày theo giờ Việt Nam (UTC+7).
+      function couponNotExpired(exp) {
+        return exp == ''
+          || timestamp.date(int(exp[0:4]), int(exp[5:7]), int(exp[8:10])) + duration.value(17, 'h') > request.time;
+      }
+
+      // Không mã: không giảm. Có mã: mã hợp lệ, số giảm đúng giới hạn, usedCount tăng 1 trong cùng lần ghi.
+      function validOrderCoupon(storeId, orderId, d) {
+        let code = d.couponCode;
+        return (code == '' && d.discount == 0)
+          || (code.matches('^[A-Z0-9]{3,20}$') && exists(couponPath(storeId, code)) && validCouponUse(storeId, orderId, d, get(couponPath(storeId, code)).data));
+      }
+
+      function validCouponUse(storeId, orderId, d, c) {
+        let after = getAfter(couponPath(storeId, d.couponCode)).data;
+        return c.active == true
+          && couponNotExpired(c.expiresAt)
+          && (c.get('maxUses', 0) == 0 || c.get('usedCount', 0) < c.maxUses)
+          && d.subtotal >= c.minOrder
+          && d.discount > 0
+          && d.discount <= d.subtotal
+          && (c.type == 'fixed' ? d.discount <= c.value : d.discount <= d.subtotal * c.value / 100 + 1)
+          && after.get('usedCount', 0) == c.get('usedCount', 0) + 1
+          && after.get('lastOrderId', '') == orderId;
+      }
+
       match /orders/{orderId} {
-        allow create: if storeActive(storeId) && orderId.matches('^[A-Z0-9]{6,12}$') && validNewOrder(request.resource.data);
+        allow create: if storeActive(storeId) && storeOpen(storeId)
+          && orderId.matches('^[A-Z0-9]{6,12}$')
+          && validNewOrder(request.resource.data)
+          && validOrderCoupon(storeId, orderId, request.resource.data);
         allow read: if isOwner(storeId) || isPlatformAdmin();
         allow update: if isOwner(storeId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stockApplied', 'updatedAt'])
@@ -400,23 +468,41 @@ service cloud.firestore {
       match /coupons/{code} {
         allow get: if canReadStoreContent(storeId);
         allow list: if isOwner(storeId);
-        allow create, update: if isOwner(storeId)
+        function validCoupon(d) {
+          return d.keys().hasOnly(['code', 'type', 'value', 'minOrder', 'expiresAt', 'active', 'maxUses', 'usedCount',
+              'lastOrderId', 'updatedAt'])
+            && d.code == code
+            && d.type in ['percent', 'fixed']
+            && num(d.value, 1, 1000000000)
+            && (d.type == 'fixed' || d.value <= 100)
+            && num(d.minOrder, 0, 10000000000)
+            && (d.expiresAt == '' || d.expiresAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
+            && d.active is bool
+            && d.get('maxUses', 0) is int && d.get('maxUses', 0) >= 0 && d.get('maxUses', 0) <= 1000000;
+        }
+        allow create: if isOwner(storeId)
           && code.matches('^[A-Z0-9]{3,20}$')
-          && request.resource.data.keys().hasOnly(['code', 'type', 'value', 'minOrder', 'expiresAt', 'active', 'updatedAt'])
-          && request.resource.data.code == code
-          && request.resource.data.type in ['percent', 'fixed']
-          && num(request.resource.data.value, 0, 1000000000)
-          && (request.resource.data.type == 'fixed' || request.resource.data.value <= 100)
-          && num(request.resource.data.minOrder, 0, 10000000000)
-          && str(request.resource.data.expiresAt, 0, 10)
-          && request.resource.data.active is bool;
+          && validCoupon(request.resource.data)
+          && request.resource.data.usedCount == 0
+          && !('lastOrderId' in request.resource.data);
+        // Chủ shop sửa mã nhưng không sửa số lượt đã dùng.
+        allow update: if (isOwner(storeId)
+            && validCoupon(request.resource.data)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['code', 'usedCount', 'lastOrderId']))
+          // Khách đặt đơn dùng mã: tăng đúng 1 lượt, kèm đơn mới tạo trong cùng lần ghi.
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount', 'lastOrderId'])
+            && request.resource.data.usedCount == resource.data.get('usedCount', 0) + 1
+            && request.resource.data.lastOrderId is string
+            && request.resource.data.lastOrderId.matches('^[A-Z0-9]{6,12}$')
+            && !exists(/databases/$(database)/documents/stores/$(storeId)/orders/$(request.resource.data.lastOrderId))
+            && getAfter(/databases/$(database)/documents/stores/$(storeId)/orders/$(request.resource.data.lastOrderId)).data.couponCode == code);
         allow delete: if isOwner(storeId);
       }
 
       // ---------- Đánh giá ----------
       match /reviews/{reviewId} {
         allow read: if canReadStoreContent(storeId);
-        allow create: if storeActive(storeId)
+        allow create: if storeActive(storeId) && storeOpen(storeId)
           && request.resource.data.keys().hasOnly(['productId', 'name', 'rating', 'comment', 'createdAt'])
           && str(request.resource.data.productId, 1, 64)
           && exists(/databases/$(database)/documents/stores/$(storeId)/products/$(request.resource.data.productId))

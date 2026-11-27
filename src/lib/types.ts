@@ -18,6 +18,7 @@ export type TemplateId =
 export type OrderStatus = 'new' | 'shipping' | 'done' | 'cancelled'
 export type PaymentMethod = 'cod' | 'bank' | 'zalo'
 export type DomainStatus = 'none' | 'pending' | 'done'
+export type StoreStatus = 'open' | 'closed'
 
 export interface StoreTheme {
   primary: string
@@ -55,6 +56,14 @@ export interface Store {
   customDomain: string
   domainStatus: DomainStatus
   active: boolean
+  /** Chủ shop / admin tạm đóng cửa hàng (khác `active` – admin khoá hẳn). */
+  status: StoreStatus
+  closedReason: string
+  closedAt?: number
+  /** UID người đóng (chủ shop hoặc admin nền tảng). */
+  closedBy: string
+  /** Link Google Maps hoặc toạ độ "lat,lng" để hiện mã QR vị trí. */
+  mapLocation: string
   /** Số sản phẩm hiện có (bộ đếm dùng cho giới hạn gói). Cửa hàng trước v1.1.0 chưa có. */
   productCount?: number
   createdAt?: number
@@ -87,6 +96,9 @@ export interface Coupon {
   minOrder: number
   expiresAt: string
   active: boolean
+  /** 0 = không giới hạn lượt dùng. */
+  maxUses: number
+  usedCount: number
 }
 
 export interface Review {

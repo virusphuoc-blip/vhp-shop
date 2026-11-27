@@ -101,6 +101,7 @@ export default function StoreDashboard() {
             </div>
             <a href={pathStoreUrl(store.slug)} target="_blank" rel="noreferrer" className="btn-ghost">Xem cửa hàng ↗</a>
           </div>
+          {store.status === 'closed' && <div className="mt-3"><Alert kind="warn">Cửa hàng đang tạm đóng – khách không xem sản phẩm và không đặt hàng được. Mở lại ở tab Cài đặt.</Alert></div>}
           {!store.active && <div className="mt-3"><Alert kind="warn">Cửa hàng đang bị quản trị viên tạm khoá – khách không thể truy cập.</Alert></div>}
           {sp.get('moi') && (
             <div className="mt-3">

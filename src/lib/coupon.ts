@@ -9,6 +9,7 @@ export function computeDiscount(subtotal: number, coupon: Coupon | null, today: 
   if (!coupon) return { discount: 0, error: 'Mã giảm giá không tồn tại.' }
   if (!coupon.active) return { discount: 0, error: 'Mã giảm giá đã ngừng áp dụng.' }
   if (coupon.expiresAt && coupon.expiresAt < today) return { discount: 0, error: 'Mã giảm giá đã hết hạn.' }
+  if (coupon.maxUses > 0 && (coupon.usedCount || 0) >= coupon.maxUses) return { discount: 0, error: 'Mã giảm giá đã hết lượt sử dụng.' }
   if (subtotal < (coupon.minOrder || 0)) {
     return { discount: 0, error: `Đơn tối thiểu ${Math.round(coupon.minOrder).toLocaleString('vi-VN')}₫ để dùng mã này.` }
   }

@@ -5,6 +5,7 @@ import {
   getCountFromServer,
   getDoc,
   getDocs,
+  runTransaction,
   limit,
   onSnapshot,
   orderBy,
@@ -22,6 +23,7 @@ import { getDb } from './firebase'
 import { getTemplate, resolveTemplateId, storedTemplateId } from '../templates'
 import { sampleProducts } from '../templates/samples'
 import type { Coupon, DomainStatus, Order, OrderStatus, PaymentConfig, Plan, PlansConfig, PlatformSettings, Product, Review, Store, StoreTheme, TemplateId, UserAccount, VipOrder, VipOrderStatus, VipTerm } from './types'
+import { computeDiscount, todayISO } from './coupon'
 import { makeVipOrderCode, nextVipExpiry, termPrice, VIP_TERMS } from './plans'
 
 function ms(v: unknown): number | undefined {
@@ -49,6 +51,11 @@ function toStore(id: string, d: DocumentData): Store {
     customDomain: d.customDomain || '',
     domainStatus: d.domainStatus || 'none',
     active: d.active === true,
+    status: d.status === 'closed' ? 'closed' : 'open',
+    closedReason: d.closedReason || '',
+    closedAt: ms(d.closedAt),
+    closedBy: d.closedBy || '',
+    mapLocation: d.mapLocation || '',
     productCount: typeof d.productCount === 'number' ? d.productCount : undefined,
     createdAt: ms(d.createdAt),
   }
@@ -140,6 +147,11 @@ export async function createStore(user: User, input: NewStoreInput, withSamples:
     customDomain: '',
     domainStatus: 'none',
     active: true,
+    status: 'open',
+    closedReason: '',
+    closedAt: null,
+    closedBy: '',
+    mapLocation: '',
     productCount: 0,
     lastProductId: '',
     createdAt: serverTimestamp(),
@@ -197,10 +209,22 @@ export async function getStoreByDomain(domain: string): Promise<StoreLookup> {
   return { status: 'notfound' }
 }
 
-export type StorePatch = Partial<Omit<Store, 'id' | 'ownerUid' | 'ownerEmail' | 'slug' | 'active' | 'createdAt'>>
+export type StorePatch = Partial<Omit<Store, 'id' | 'ownerUid' | 'ownerEmail' | 'slug' | 'active' | 'createdAt' | 'status' | 'closedReason' | 'closedAt' | 'closedBy'>>
 
 export async function updateStore(id: string, patch: StorePatch): Promise<void> {
   await updateDoc(doc(getDb(), 'stores', id), { ...patch, updatedAt: serverTimestamp() })
+}
+
+/** Đóng/mở cửa hàng (chủ shop hoặc admin nền tảng); dữ liệu giữ nguyên. */
+export async function setStoreOpen(storeId: string, open: boolean, byUid: string, reason = ''): Promise<Pick<Store, 'status' | 'closedReason' | 'closedAt' | 'closedBy'>> {
+  await updateDoc(doc(getDb(), 'stores', storeId), {
+    status: open ? 'open' : 'closed',
+    closedReason: open ? '' : reason.trim().slice(0, 200),
+    closedAt: open ? null : serverTimestamp(),
+    closedBy: open ? '' : byUid,
+    updatedAt: serverTimestamp(),
+  })
+  return open ? { status: 'open', closedReason: '', closedAt: undefined, closedBy: '' } : { status: 'closed', closedReason: reason.trim().slice(0, 200), closedAt: Date.now(), closedBy: byUid }
 }
 
 export async function setCustomDomain(store: Store, domain: string): Promise<void> {
@@ -292,13 +316,29 @@ export function newOrderId(): string {
 
 export type NewOrder = Omit<Order, 'id' | 'status' | 'stockApplied' | 'createdAt'>
 
+export class CouponError extends Error {
+  name = 'CouponError'
+}
+
+/** Đặt đơn; nếu có mã giảm giá thì kiểm tra lại mã và tăng usedCount trong cùng một transaction. */
 export async function placeOrder(storeId: string, order: NewOrder): Promise<string> {
+  const db = getDb()
   const id = newOrderId()
-  await setDoc(doc(getDb(), 'stores', storeId, 'orders', id), {
-    ...order,
-    status: 'new',
-    stockApplied: false,
-    createdAt: serverTimestamp(),
+  const ref = doc(db, 'stores', storeId, 'orders', id)
+  const data = { ...order, status: 'new', stockApplied: false, createdAt: serverTimestamp() }
+  if (!order.couponCode) {
+    await setDoc(ref, data)
+    return id
+  }
+  const cRef = doc(db, 'stores', storeId, 'coupons', order.couponCode)
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(cRef)
+    const c = snap.exists() ? toCoupon(snap.data()) : null
+    const r = computeDiscount(order.subtotal, c, todayISO())
+    if (r.error || !c) throw new CouponError(r.error || 'Mã giảm giá không tồn tại.')
+    if (r.discount !== order.discount) throw new CouponError('Mã giảm giá vừa thay đổi, vui lòng áp dụng lại mã.')
+    tx.set(ref, data)
+    tx.update(cRef, { usedCount: c.usedCount + 1, lastOrderId: id })
   })
   return id
 }
@@ -331,20 +371,42 @@ export async function updateOrderStatus(storeId: string, order: Order, status: O
 
 // ---------------- Coupons ----------------
 
+function toCoupon(d: DocumentData): Coupon {
+  return {
+    code: d.code,
+    type: d.type === 'fixed' ? 'fixed' : 'percent',
+    value: d.value || 0,
+    minOrder: d.minOrder || 0,
+    expiresAt: d.expiresAt || '',
+    active: d.active === true,
+    maxUses: d.maxUses || 0,
+    usedCount: d.usedCount || 0,
+  }
+}
+
 export async function listCoupons(storeId: string): Promise<Coupon[]> {
   const snap = await getDocs(collection(getDb(), 'stores', storeId, 'coupons'))
-  return snap.docs.map((d) => d.data() as Coupon).sort((a, b) => a.code.localeCompare(b.code))
+  return snap.docs.map((d) => toCoupon(d.data())).sort((a, b) => a.code.localeCompare(b.code))
 }
 
 export async function getCoupon(storeId: string, code: string): Promise<Coupon | null> {
   const clean = code.trim().toUpperCase()
   if (!/^[A-Z0-9]{3,20}$/.test(clean)) return null
   const snap = await getDoc(doc(getDb(), 'stores', storeId, 'coupons', clean))
-  return snap.exists() ? (snap.data() as Coupon) : null
+  return snap.exists() ? toCoupon(snap.data()) : null
 }
 
-export async function saveCoupon(storeId: string, c: Coupon): Promise<void> {
-  await setDoc(doc(getDb(), 'stores', storeId, 'coupons', c.code), { ...c, updatedAt: serverTimestamp() })
+export type CouponInput = Omit<Coupon, 'usedCount'>
+
+export async function createCoupon(storeId: string, c: CouponInput): Promise<void> {
+  const ref = doc(getDb(), 'stores', storeId, 'coupons', c.code)
+  if ((await getDoc(ref)).exists()) throw new Error(`Mã ${c.code} đã có trong cửa hàng. Hãy dùng mã khác hoặc sửa mã cũ.`)
+  await setDoc(ref, { ...c, usedCount: 0, updatedAt: serverTimestamp() })
+}
+
+/** Sửa mã (không đổi code và số lượt đã dùng). */
+export async function updateCoupon(storeId: string, code: string, patch: Partial<Omit<CouponInput, 'code'>>): Promise<void> {
+  await updateDoc(doc(getDb(), 'stores', storeId, 'coupons', code), { ...patch, updatedAt: serverTimestamp() })
 }
 
 export async function deleteCoupon(storeId: string, code: string): Promise<void> {

@@ -191,11 +191,11 @@ describe('đơn hàng', () => {
 describe('mã giảm giá & đánh giá', () => {
   it('chủ shop tạo mã, khách chỉ get theo mã', async () => {
     const alice = env.authenticatedContext('alice').firestore()
-    await assertSucceeds(setDoc(doc(alice, 'stores/sA/coupons/GIAM10'), { code: 'GIAM10', type: 'percent', value: 10, minOrder: 0, expiresAt: '', active: true }))
+    await assertSucceeds(setDoc(doc(alice, 'stores/sA/coupons/GIAM10'), { code: 'GIAM10', type: 'percent', value: 10, minOrder: 0, expiresAt: '', active: true, maxUses: 0, usedCount: 0 }))
     const anon = env.unauthenticatedContext().firestore()
     await assertSucceeds(getDoc(doc(anon, 'stores/sA/coupons/GIAM10')))
     await assertFails(getDocs(collection(anon, 'stores/sA/coupons')))
-    await assertFails(setDoc(doc(alice, 'stores/sA/coupons/BAD'), { code: 'BAD', type: 'percent', value: 150, minOrder: 0, expiresAt: '', active: true }))
+    await assertFails(setDoc(doc(alice, 'stores/sA/coupons/BAD'), { code: 'BAD', type: 'percent', value: 150, minOrder: 0, expiresAt: '', active: true, maxUses: 0, usedCount: 0 }))
   })
   it('khách đánh giá 1–5 sao cho sản phẩm có thật', async () => {
     const anon = env.unauthenticatedContext().firestore()
@@ -204,6 +204,110 @@ describe('mã giảm giá & đánh giá', () => {
     await assertFails(setDoc(doc(anon, 'stores/sA/reviews/r2'), { ...r, rating: 6 }))
     await assertFails(setDoc(doc(anon, 'stores/sA/reviews/r3'), { ...r, productId: 'khong-co' }))
     await assertFails(deleteDoc(doc(anon, 'stores/sA/reviews/r1')))
+  })
+})
+
+describe('đóng / mở cửa hàng', () => {
+  const close = (uid: string, reason = 'Nghỉ Tết') => ({ status: 'closed', closedReason: reason, closedAt: serverTimestamp(), closedBy: uid, updatedAt: serverTimestamp() })
+  const reopen = { status: 'open', closedReason: '', closedAt: null, closedBy: '', updatedAt: serverTimestamp() }
+  it('chủ shop đóng rồi mở lại', async () => {
+    const alice = env.authenticatedContext('alice').firestore()
+    await assertFails(updateDoc(doc(alice, 'stores/sA'), close('bob')))
+    await assertSucceeds(updateDoc(doc(alice, 'stores/sA'), close('alice')))
+    await assertSucceeds(updateDoc(doc(alice, 'stores/sA'), reopen))
+  })
+  it('người khác không đổi được trạng thái', async () => {
+    const bob = env.authenticatedContext('bob').firestore()
+    await assertFails(updateDoc(doc(bob, 'stores/sA'), close('bob')))
+    await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(), 'stores/sA'), { status: 'closed' }))
+  })
+  it('admin đóng/mở bất kỳ shop; shop do admin đóng thì chủ shop không tự mở', async () => {
+    const admin = env.authenticatedContext('admin', ADMIN).firestore()
+    const alice = env.authenticatedContext('alice').firestore()
+    await assertSucceeds(updateDoc(doc(admin, 'stores/sA'), close('admin', 'Vi phạm')))
+    await assertFails(updateDoc(doc(alice, 'stores/sA'), reopen))
+    await assertFails(updateDoc(doc(admin, 'stores/sA'), { name: 'Đổi tên', updatedAt: serverTimestamp() }))
+    await assertSucceeds(updateDoc(doc(admin, 'stores/sA'), reopen))
+  })
+  it('shop đóng: vẫn đọc được thông tin shop, không đọc sản phẩm, không đặt đơn', async () => {
+    const alice = env.authenticatedContext('alice').firestore()
+    await assertSucceeds(updateDoc(doc(alice, 'stores/sA'), close('alice')))
+    const anon = env.unauthenticatedContext().firestore()
+    await assertSucceeds(getDoc(doc(anon, 'stores/sA')))
+    await assertFails(getDocs(collection(anon, 'stores/sA/products')))
+    await assertFails(setDoc(doc(anon, 'stores/sA/orders/CLOSED01'), order()))
+    await assertSucceeds(getDocs(collection(alice, 'stores/sA/products')))
+    await assertSucceeds(updateDoc(doc(alice, 'stores/sA'), reopen))
+    await assertSucceeds(getDocs(collection(anon, 'stores/sA/products')))
+    await assertSucceeds(setDoc(doc(anon, 'stores/sA/orders/OPEN0001'), order()))
+  })
+  it('lưu vị trí bản đồ hợp lệ', async () => {
+    const alice = env.authenticatedContext('alice').firestore()
+    await assertSucceeds(updateDoc(doc(alice, 'stores/sA'), { mapLocation: '10.7769,106.7009' }))
+    await assertSucceeds(updateDoc(doc(alice, 'stores/sA'), { mapLocation: 'https://maps.app.goo.gl/abc' }))
+    await assertSucceeds(updateDoc(doc(alice, 'stores/sA'), { mapLocation: '' }))
+    await assertFails(updateDoc(doc(alice, 'stores/sA'), { mapLocation: 'javascript:alert(1)' }))
+  })
+})
+
+describe('mã giảm giá: lượt dùng', () => {
+  const coupon = (extra: Record<string, unknown> = {}) => ({ code: 'GIAM10', type: 'percent', value: 10, minOrder: 100000, expiresAt: '', active: true, maxUses: 2, usedCount: 0, ...extra })
+  const couponOrder = (discount = 10000, subtotal = 100000) => order({ subtotal, discount, couponCode: 'GIAM10', total: subtotal - discount })
+  async function seedCoupon(extra: Record<string, unknown> = {}) {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'stores/sA/coupons/GIAM10'), coupon(extra))
+    })
+  }
+  async function place(id: string, o: Record<string, unknown>, used = 1) {
+    const db = env.unauthenticatedContext().firestore()
+    const b = writeBatch(db)
+    b.set(doc(db, 'stores/sA/orders', id), o)
+    b.update(doc(db, 'stores/sA/coupons/GIAM10'), { usedCount: used, lastOrderId: id })
+    return b.commit()
+  }
+  it('đặt đơn kèm mã phải tăng usedCount đúng 1', async () => {
+    await seedCoupon()
+    const db = env.unauthenticatedContext().firestore()
+    await assertFails(setDoc(doc(db, 'stores/sA/orders/CPN00001'), couponOrder()))
+    await assertFails(place('CPN00002', couponOrder(), 5))
+    await assertSucceeds(place('CPN00003', couponOrder(), 1))
+  })
+  it('không giảm quá 10%, không dưới đơn tối thiểu', async () => {
+    await seedCoupon()
+    await assertFails(place('CPN00010', couponOrder(20000)))
+    await assertFails(place('CPN00011', couponOrder(9000, 90000)))
+  })
+  it('hết lượt / tắt / hết hạn thì không đặt được', async () => {
+    await seedCoupon({ usedCount: 2 })
+    await assertFails(place('CPN00020', couponOrder(), 3))
+    await seedCoupon({ active: false })
+    await assertFails(place('CPN00021', couponOrder()))
+    await seedCoupon({ expiresAt: '2020-01-01' })
+    await assertFails(place('CPN00022', couponOrder()))
+    await seedCoupon({ expiresAt: '2099-12-31' })
+    await assertSucceeds(place('CPN00023', couponOrder()))
+  })
+  it('đơn không mã thì không được giảm', async () => {
+    const db = env.unauthenticatedContext().firestore()
+    await assertFails(setDoc(doc(db, 'stores/sA/orders/NOCPN001'), order({ discount: 5000, total: 20000 })))
+  })
+  it('khách không tự sửa usedCount; chủ shop sửa mã nhưng không sửa lượt dùng', async () => {
+    await seedCoupon({ usedCount: 1 })
+    const anon = env.unauthenticatedContext().firestore()
+    const alice = env.authenticatedContext('alice').firestore()
+    await assertFails(updateDoc(doc(anon, 'stores/sA/coupons/GIAM10'), { usedCount: 0 }))
+    await assertFails(updateDoc(doc(anon, 'stores/sA/coupons/GIAM10'), { usedCount: 2, lastOrderId: 'ORD001' }))
+    await assertFails(updateDoc(doc(alice, 'stores/sA/coupons/GIAM10'), { usedCount: 0 }))
+    await assertSucceeds(updateDoc(doc(alice, 'stores/sA/coupons/GIAM10'), { active: false, maxUses: 5 }))
+    const bob = env.authenticatedContext('bob').firestore()
+    await assertFails(updateDoc(doc(bob, 'stores/sA/coupons/GIAM10'), { active: true }))
+    await assertFails(deleteDoc(doc(bob, 'stores/sA/coupons/GIAM10')))
+  })
+  it('mã cũ (chưa có maxUses/usedCount) vẫn dùng được', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'stores/sA/coupons/GIAM10'), { code: 'GIAM10', type: 'percent', value: 10, minOrder: 0, expiresAt: '', active: true })
+    })
+    await assertSucceeds(place('CPN00030', couponOrder()))
   })
 })
 

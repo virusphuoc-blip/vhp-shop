@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { slugify, validateSlug, normalizeDomain, isApexDomain } from './slug'
 import { buildVietQRPayload, crc16 } from './vietqr'
+import { mapsUrl } from './maps'
 import { computeDiscount } from './coupon'
 import { resolveHost } from './host'
 import { buildZaloOrderText, zaloLink } from './zalo'
@@ -48,10 +49,14 @@ describe('vietqr', () => {
 })
 
 describe('coupon', () => {
-  const c = { code: 'GIAM10', type: 'percent' as const, value: 10, minOrder: 100000, expiresAt: '2026-12-31', active: true }
+  const c = { code: 'GIAM10', type: 'percent' as const, value: 10, minOrder: 100000, expiresAt: '2026-12-31', active: true, maxUses: 0, usedCount: 0 }
   it('giảm %', () => expect(computeDiscount(200000, c, '2026-11-01').discount).toBe(20000))
   it('chưa đủ tối thiểu', () => expect(computeDiscount(50000, c, '2026-11-01').error).toBeTruthy())
   it('hết hạn', () => expect(computeDiscount(200000, c, '2027-01-01').error).toBeTruthy())
+  it('10% đơn 100.000đ', () => expect(computeDiscount(100000, c, '2026-11-01')).toEqual({ discount: 10000, error: null }))
+  it('hết lượt', () => expect(computeDiscount(200000, { ...c, maxUses: 2, usedCount: 2 }, '2026-11-01').error).toMatch('hết lượt'))
+  it('còn lượt', () => expect(computeDiscount(200000, { ...c, maxUses: 2, usedCount: 1 }, '2026-11-01').discount).toBe(20000))
+  it('đã tắt', () => expect(computeDiscount(200000, { ...c, active: false }, '2026-11-01').error).toMatch('ngừng'))
   it('cố định không vượt tổng', () => expect(computeDiscount(30000, { ...c, type: 'fixed', value: 50000, minOrder: 0 }, '2026-11-01').discount).toBe(30000))
 })
 
@@ -169,4 +174,13 @@ describe('nâng VIP qua chuyển khoản', async () => {
     expect(paymentReady({ ...cfg, bank: { bin: '', accountNo: '', accountName: '' } })).toBe(false)
     expect(paymentReady(null)).toBe(false)
   })
+})
+
+describe('mapsUrl', () => {
+  it('toạ độ', () => expect(mapsUrl('10.7769, 106.7009')).toBe('https://maps.google.com/?q=10.7769,106.7009'))
+  it('toạ độ sai', () => expect(mapsUrl('100,200')).toBeNull())
+  it('link Google Maps', () => expect(mapsUrl('https://maps.app.goo.gl/abc123')).toBe('https://maps.app.goo.gl/abc123'))
+  it('link google.com/maps', () => expect(mapsUrl('https://www.google.com/maps/place/Ben+Thanh')).toBeTruthy())
+  it('link khác bị chặn', () => expect(mapsUrl('https://evil.com/maps')).toBeNull())
+  it('trống', () => expect(mapsUrl('')).toBeNull())
 })

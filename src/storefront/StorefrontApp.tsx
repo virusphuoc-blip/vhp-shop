@@ -1,4 +1,6 @@
-import { useEffect, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
+import QRCode from 'qrcode'
+import { mapsUrl } from '../lib/maps'
 import { Link, Route, Routes } from 'react-router-dom'
 import type { Product, Review, Store } from '../lib/types'
 import { getTemplate } from '../templates'
@@ -67,6 +69,24 @@ function StoreHeader() {
   )
 }
 
+function LocationQR({ location }: { location: string }) {
+  const url = mapsUrl(location)
+  const [img, setImg] = useState('')
+  useEffect(() => {
+    if (url) QRCode.toDataURL(url, { width: 220, margin: 1, errorCorrectionLevel: 'M' }).then(setImg, () => setImg(''))
+  }, [url])
+  if (!url || !img) return null
+  return (
+    <div className="flex items-center gap-3 pt-2" data-testid="location-qr">
+      <img src={img} alt="Mã QR vị trí cửa hàng trên Google Maps" className="h-24 w-24 shrink-0 rounded bg-white p-1" />
+      <div className="text-xs">
+        <p className="font-semibold text-stext">Quét mã để xem đường đi</p>
+        <a href={url} target="_blank" rel="noreferrer" className="mt-1 inline-block underline hover:text-sp">Mở Google Maps ↗</a>
+      </div>
+    </div>
+  )
+}
+
 function StoreFooter() {
   const { store, link } = useStore()
   return (
@@ -81,6 +101,7 @@ function StoreFooter() {
           {store.phone && <p>📞 <a href={`tel:${store.phone}`} className="hover:text-sp">{store.phone}</a></p>}
           {store.zalo && <p>💬 <a href={zaloLink(store.zalo)} target="_blank" rel="noreferrer" className="hover:text-sp">Zalo: {store.zalo}</a></p>}
           {store.openHours && <p>🕒 {store.openHours}</p>}
+          {store.mapLocation && <LocationQR location={store.mapLocation} />}
         </div>
         <div className="space-y-1">
           <Link to={link('san-pham')} className="block hover:text-sp">Tất cả sản phẩm</Link>

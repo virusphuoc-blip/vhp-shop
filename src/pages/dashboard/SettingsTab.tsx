@@ -2,8 +2,10 @@ import { useState, type FormEvent } from 'react'
 import { Alert } from '../../components/ui'
 import { BANKS } from '../../lib/banks'
 import { updateStore } from '../../lib/db'
+import { mapsUrl } from '../../lib/maps'
 import type { Store } from '../../lib/types'
 import { useDash } from './DashContext'
+import StoreStatusCard from './StoreStatusCard'
 
 export default function SettingsTab() {
   const { store, setStore } = useDash()
@@ -12,6 +14,7 @@ export default function SettingsTab() {
     phone: store.phone,
     zalo: store.zalo,
     address: store.address,
+    mapLocation: store.mapLocation,
     description: store.description,
     openHours: store.openHours,
     shippingFee: String(store.shippingFee || 0),
@@ -28,12 +31,14 @@ export default function SettingsTab() {
     e.preventDefault()
     setMsg(null)
     if (f.accountNo && !/^[0-9]{4,19}$/.test(f.accountNo.trim())) return setMsg({ kind: 'error', text: 'Số tài khoản chỉ gồm 4–19 chữ số.' })
+    if (f.mapLocation.trim() && !mapsUrl(f.mapLocation)) return setMsg({ kind: 'error', text: 'Vị trí phải là link Google Maps (https://maps.app.goo.gl/..., https://www.google.com/maps/...) hoặc toạ độ dạng 10.7769,106.7009.' })
     if (f.accountNo && !f.bin) return setMsg({ kind: 'error', text: 'Vui lòng chọn ngân hàng.' })
     const patch: Partial<Store> = {
       name: f.name.trim(),
       phone: f.phone.trim(),
       zalo: f.zalo.trim(),
       address: f.address.trim(),
+      mapLocation: f.mapLocation.trim(),
       description: f.description.trim(),
       openHours: f.openHours.trim(),
       shippingFee: Math.max(0, Math.round(Number(f.shippingFee) || 0)),
@@ -59,7 +64,10 @@ export default function SettingsTab() {
     </div>
   )
 
+  const mapPreview = mapsUrl(f.mapLocation)
   return (
+    <div className="space-y-4">
+    <StoreStatusCard />
     <form onSubmit={submit} className="space-y-4">
       <div className="card space-y-3">
         <h2 className="font-bold">Thông tin cửa hàng</h2>
@@ -71,6 +79,14 @@ export default function SettingsTab() {
         <div>
           <label className="label" htmlFor="s-address">Địa chỉ</label>
           <textarea id="s-address" className="field" rows={2} maxLength={300} value={f.address} onChange={(e) => set('address', e.target.value)} />
+        </div>
+        <div>
+          <label className="label" htmlFor="s-mapLocation">Vị trí trên bản đồ (hiện mã QR ở trang cửa hàng)</label>
+          <input id="s-mapLocation" className="field" maxLength={500} value={f.mapLocation} onChange={(e) => set('mapLocation', e.target.value)} placeholder="Link Google Maps hoặc toạ độ 10.7769,106.7009" />
+          <p className="mt-1 text-xs text-slate-500">
+            Mở Google Maps → chọn vị trí shop → Chia sẻ → Sao chép đường liên kết, hoặc nhập vĩ độ,kinh độ. Để trống thì không hiện mã QR.
+            {mapPreview && <> {' '}<a href={mapPreview} target="_blank" rel="noreferrer" className="font-semibold text-indigo-700 underline">Kiểm tra vị trí ↗</a></>}
+          </p>
         </div>
         <div>
           <label className="label" htmlFor="s-desc">Giới thiệu ngắn (hiện ở chân trang & SEO)</label>
@@ -101,5 +117,6 @@ export default function SettingsTab() {
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       <button className="btn-primary w-full py-3" disabled={busy}>{busy ? 'Đang lưu...' : 'Lưu cài đặt'}</button>
     </form>
+    </div>
   )
 }

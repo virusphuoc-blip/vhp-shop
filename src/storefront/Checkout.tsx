@@ -97,8 +97,14 @@ export default function Checkout() {
       const state: OrderDoneState = { orderId, payment, total, zaloText }
       nav(link(`don-hang/${orderId}`), { replace: true, state })
       clearCart()
-    } catch {
-      setErr('Không đặt được đơn, vui lòng thử lại hoặc liên hệ cửa hàng.')
+    } catch (e2) {
+      const ex = e2 as { name?: string; code?: string; message?: string }
+      if (ex.name === 'CouponError') {
+        setCoupon(null)
+        setCouponMsg(ex.message || '')
+        setErr(`${ex.message} Tổng tiền đã được tính lại, vui lòng kiểm tra rồi đặt lại.`)
+      } else if (ex.code === 'permission-denied') setErr('Cửa hàng hiện không nhận đơn (có thể đang tạm đóng). Vui lòng liên hệ cửa hàng.')
+      else setErr('Không đặt được đơn, vui lòng thử lại hoặc liên hệ cửa hàng.')
     } finally {
       setBusy(false)
     }

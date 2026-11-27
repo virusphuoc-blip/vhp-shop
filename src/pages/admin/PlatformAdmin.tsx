@@ -5,7 +5,7 @@ import { loginGoogle, logout } from '../../auth/actions'
 import { NotConfigured } from '../../components/NotConfigured'
 import { PlatformShell } from '../../components/PlatformShell'
 import { Alert, Spinner } from '../../components/ui'
-import { countOrders, getDisabledTemplates, listAllStores, listUserAccounts, savePlansConfig, setDisabledTemplates, setFreeMode, setStoreActive, setUserPlan } from '../../lib/db'
+import { countOrders, getDisabledTemplates, listAllStores, listUserAccounts, savePlansConfig, setDisabledTemplates, setFreeMode, setStoreActive, setStoreOpen, setUserPlan } from '../../lib/db'
 import { PlanBadge } from '../../components/PlanBits'
 import { addMonths, effectivePlan, formatLimit } from '../../lib/plans'
 import { usePlatformConfig } from '../../lib/usePlatformConfig'
@@ -226,12 +226,13 @@ function Accounts({ stores }: { stores: Store[] }) {
 }
 
 function Dashboard() {
+  const { user } = useAuth()
   const [stores, setStores] = useState<Store[] | null>(null)
   const [todayCounts, setTodayCounts] = useState<Record<string, number>>({})
   const [disabled, setDisabled] = useState<string[]>([])
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
-  const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'domain'>('all')
+  const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'closed' | 'domain'>('all')
   const [accountsKey, setAccountsKey] = useState(0)
 
   useEffect(() => {
@@ -256,6 +257,23 @@ function Dashboard() {
       setErr((e as Error).message)
     }
   }
+  const toggleOpen = async (s: Store) => {
+    const open = s.status === 'closed'
+    let reason = ''
+    if (open) {
+      if (!confirm(`Mở lại cửa hàng "${s.name}"?`)) return
+    } else {
+      const r = prompt(`Đóng cửa hàng "${s.name}"? Khách sẽ thấy "Cửa hàng tạm đóng" và không đặt hàng được.\nLý do (không bắt buộc, khách sẽ thấy):`, '')
+      if (r === null) return
+      reason = r
+    }
+    try {
+      const next = await setStoreOpen(s.id, open, user?.uid || '', reason)
+      setStores((l) => (l || []).map((x) => (x.id === s.id ? { ...x, ...next } : x)))
+    } catch (e) {
+      setErr((e as Error).message)
+    }
+  }
   const toggleTemplate = async (id: string) => {
     const next = disabled.includes(id) ? disabled.filter((x) => x !== id) : [...disabled, id]
     try {
@@ -271,7 +289,7 @@ function Dashboard() {
     return (stores || []).filter(
       (s) =>
         (!nq || `${s.name} ${s.slug} ${s.ownerEmail} ${s.customDomain}`.toLowerCase().includes(nq)) &&
-        (filter === 'all' || (filter === 'active' ? s.active : filter === 'paused' ? !s.active : Boolean(s.customDomain))),
+        (filter === 'all' || (filter === 'active' ? s.active : filter === 'paused' ? !s.active : filter === 'closed' ? s.status === 'closed' : Boolean(s.customDomain))),
     )
   }, [stores, q, filter])
 
@@ -317,6 +335,7 @@ function Dashboard() {
             <option value="all">Tất cả</option>
             <option value="active">Đang hoạt động</option>
             <option value="paused">Đang tắt</option>
+            <option value="closed">Đang tạm đóng</option>
             <option value="domain">Có tên miền riêng</option>
           </select>
         </div>
@@ -330,7 +349,15 @@ function Dashboard() {
                 <div className="truncate text-xs text-slate-500">
                   {s.ownerEmail} · {s.createdAt ? new Date(s.createdAt).toLocaleDateString('vi-VN') : ''} · hôm nay {todayCounts[s.id] ?? '…'} đơn
                 </div>
+                {s.status === 'closed' && (
+                  <div className="truncate text-xs font-semibold text-amber-700" data-testid="admin-store-closed">
+                    Tạm đóng bởi {s.closedBy === s.ownerUid ? 'chủ shop' : 'quản trị'}{s.closedReason ? ` · ${s.closedReason}` : ''}
+                  </div>
+                )}
               </div>
+              <button type="button" className="btn-ghost shrink-0 px-2.5 text-xs" onClick={() => toggleOpen(s)} data-testid="admin-store-open-toggle">
+                {s.status === 'closed' ? 'Mở' : 'Đóng'}
+              </button>
               <label className="flex shrink-0 cursor-pointer flex-col items-center gap-0.5 text-[11px]">
                 <input type="checkbox" className="peer sr-only" checked={s.active} onChange={() => toggleStore(s)} aria-label={`Bật/tắt ${s.name}`} />
                 <span className="relative h-6 w-11 rounded-full bg-slate-300 transition peer-checked:bg-emerald-500 after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition peer-checked:after:translate-x-5" />
