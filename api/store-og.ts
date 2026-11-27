@@ -12,7 +12,6 @@ export interface OgStore {
   variant: string
   logo: string
   banner: string
-  primary: string
   closed: boolean
   closedReason: string
 }
@@ -60,15 +59,18 @@ export function toOgStore(slug: string, d: Record<string, unknown>): OgStore {
     variant: s(theme.variant),
     logo: s(theme.logo),
     banner: s(theme.banner),
-    primary: /^#[0-9a-fA-F]{6}$/.test(s(theme.primary)) ? s(theme.primary) : '#4f46e5',
     closed: d.status === 'closed',
     closedReason: s(d.closedReason),
   }
 }
 
-export function categoryLabel(st: Pick<OgStore, 'template' | 'variant'>): string {
+export function categoryId(st: Pick<OgStore, 'template' | 'variant'>): string {
   const key = st.variant || st.template
-  return CATEGORY.find(([id]) => key === id || key.startsWith(id + '-'))?.[1] || ''
+  return CATEGORY.find(([id]) => key === id || key.startsWith(id + '-'))?.[0] || ''
+}
+
+export function categoryLabel(st: Pick<OgStore, 'template' | 'variant'>): string {
+  return CATEGORY.find(([id]) => id === categoryId(st))?.[1] || ''
 }
 
 export function clip(t: string, n: number): string {
@@ -144,11 +146,38 @@ export async function loadStore(slug: string): Promise<{ id: string; store: OgSt
   return { id, store: toOgStore(slug, d) }
 }
 
+function productImage(p: Record<string, unknown>): string {
+  const imgs = Array.isArray(p.images) ? (p.images as unknown[]).map(s) : []
+  return imgs.find((x) => /^https?:/.test(x)) || s(p.thumb) || imgs[0] || ''
+}
+
+function pickImage(st: OgStore, products: Record<string, unknown>[]): string {
+  return st.banner || st.logo || products.map(productImage).find(Boolean) || ''
+}
+
+/** Phục vụ ảnh lưu dạng base64 trong Firestore (Zalo/Facebook cần link ảnh thật). */
+async function serveImage(slug: string, origin: string): Promise<Response> {
+  const res = await loadStore(slug)
+  const img = res ? pickImage(res.store, res.store.closed ? [] : await listProducts(res.id)) : ''
+  const m = /^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,(.+)$/.exec(img)
+  const cache = { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=3600' }
+  if (m) {
+    const bin = atob(m[2])
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    return new Response(bytes, { headers: { 'Content-Type': m[1], ...cache } })
+  }
+  if (/^https?:/.test(img)) return Response.redirect(img, 302)
+  // Shop chưa có ảnh: ảnh mặc định theo ngành hàng của shop.
+  return Response.redirect(`${origin}/og/${(res && categoryId(res.store)) || 'default'}.png`, 302)
+}
+
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const host = request.headers.get('x-forwarded-host') || url.host
   const origin = `https://${host}`
   const slug = (url.searchParams.get('slug') || '').toLowerCase()
+  if (url.searchParams.get('img') === '1') return serveImage(slug, origin)
 
   const page = await fetch(`${origin}/index.html`)
   let html = await page.text()
@@ -157,12 +186,17 @@ export async function GET(request: Request): Promise<Response> {
     if (res) {
       const st = res.store
       const products = st.closed ? [] : await listProducts(res.id)
-      const ver = encodeURIComponent((st.banner || st.logo).slice(-16) || 'p' + products.length)
+      const img = pickImage(st, products)
+      const image = /^https?:/.test(img)
+        ? img
+        : img
+          ? `${origin}/api/store-og?slug=${slug}&img=1&v=${encodeURIComponent(img.slice(-16))}`
+          : `${origin}/og/${categoryId(st) || 'default'}.png`
       html = injectOg(html, {
         title: st.closed ? `${st.name} (tạm đóng)` : st.name,
         description: ogDescription(st, products.map((p) => s(p.name)).filter(Boolean)),
         url: `${origin}/s/${slug}`,
-        image: `${origin}/api/store-og-image?slug=${slug}&v=${ver}`,
+        image,
       })
     }
   } catch {

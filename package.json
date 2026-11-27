@@ -13,7 +13,6 @@
     "emulators": "firebase emulators:start --only auth,firestore --project demo-vhp-shop"
   },
   "dependencies": {
-    "@vercel/og": "^1.0.3",
     "firebase": "^13.4.0",
     "qrcode": "^1.5.4",
     "react": "^19.3.1",
