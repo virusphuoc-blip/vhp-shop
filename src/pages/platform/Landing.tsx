@@ -93,8 +93,8 @@ export default function Landing() {
                       {t.name}
                     </div>
                     <div className="mt-2 flex gap-1.5">
-                      {[t.palette.primary, t.palette.accent, t.palette.bg, t.palette.text].map((c) => (
-                        <span key={c} className="h-4 w-4 rounded-full border border-black/10" style={{ background: c }} />
+                      {[t.palette.primary, t.palette.accent, t.palette.bg, t.palette.text].map((c, i) => (
+                        <span key={i} className="h-4 w-4 rounded-full border border-black/10" style={{ background: c }} />
                       ))}
                     </div>
                   </div>
